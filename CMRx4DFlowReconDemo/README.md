@@ -13,5 +13,3 @@ This demo contains several Jupyter notebooks (`*.ipynb`) organized into the foll
 
 ### 5) Evaluation Demo
 
-## Notes
-- If you change parameters in earlier steps (e.g., undersampling rate), results in later steps will change accordingly.
