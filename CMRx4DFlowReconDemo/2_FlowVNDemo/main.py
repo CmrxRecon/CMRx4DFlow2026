@@ -10,9 +10,9 @@ from torch.utils.data import DataLoader, SubsetRandomSampler
 import pytorch_lightning as pl
 from pytorch_lightning.loggers import TensorBoardLogger
 from utils.misc_utils import *
-from utils.dataloader import OwnDataset
+# from utils.dataloader import OwnDataset
+from utils.dataloader_CMRx4DFlow import CMRx4DFlowDataSet
 from networks.flowvn import FlowVN
-from networks.flowmri_net import FlowMRI_Net
 
                 
 class UnrolledNetwork(pl.LightningModule):
@@ -87,8 +87,8 @@ class UnrolledNetwork(pl.LightningModule):
                 for t in range(-self.options['T_size']+1,recon_img_p1.shape[2]-self.options['T_size']+1):
                     cardiac_bins = list(range(t, t+self.options['T_size']))
                     recon_img_p1[:,:,t+self.options['T_size']//2] = self.network(batch['imdata_p1'][:,:,cardiac_bins], batch['kdata_p1'][:,:,:,cardiac_bins], batch['coil_sens'])[:,:,self.options['T_size']//2]
-
-            loss = torch.norm(recon_img_p1[:,:,:,center_slice] - batch['gt'][0,:,:,:,center_slice], p=1)/torch.numel(recon_img_p1[:,:,:,center_slice])
+            
+            loss = torch.norm(recon_img_p1[:,:,:,center_slice] - batch['gt'][:,:,:,center_slice], p=1)/torch.numel(recon_img_p1[:,:,:,center_slice])
 
         self.log_dict({"val_loss_epoch": loss, "step": self.current_epoch*1.}, on_step=False, on_epoch=True)
 
@@ -177,29 +177,19 @@ if __name__ == '__main__':
     save_dir = Path(args['save_dir'])
     save_dir.mkdir(parents=True,exist_ok=True)
     logger = TensorBoardLogger("./results/lightning_logs", name="") if args['mode'] == 'train' else None
-    n_run = str(max([int(x.split("_")[-1]) for x in glob("./results/lightning_logs/*", recursive = True)])+1)
+
+    n_run = str(max((int(p.split("_")[-1]) for p in glob("./results/lightning_logs/*")), default=0) + 1)
     checkpoint_callback = pl.callbacks.ModelCheckpoint(save_top_k=1, save_weights_only=True, dirpath=save_dir, filename=n_run+'-{epoch}')  # save last checkpoint only
-    trainer = pl.Trainer(accelerator='gpu', max_epochs=args['epoch'], accumulate_grad_batches=args['batch_size'], 
+    trainer = pl.Trainer(accelerator='gpu',devices=[0], max_epochs=args['epoch'], accumulate_grad_batches=args['batch_size'], 
                          logger=logger, gradient_clip_val=1, callbacks=[checkpoint_callback])  
 
-    dataset = OwnDataset(**args)
+    dataset = CMRx4DFlowDataSet(**args)
     if args['mode'] == 'train':
         args_val = vars(parser.parse_args())
         args_val['mode'] = 'val'
-        val_dataset = OwnDataset(**args_val)
+        val_dataset = CMRx4DFlowDataSet(**args_val)
         
-        if 'brain' in args['root_dir']:  # train on subset of slices
-            samples = []
-            for i, (subj_dir, slice) in enumerate(dataset.get_order()):
-                center_slice = slice + int(args['D_size']//2)
-                segmentation = np.load(str(subj_dir) + '/segmentation_full.npy', mmap_mode='c')[center_slice]
-                if np.mean(segmentation)*100>0.2:  # at least 0.2% must have flow to be considered for training
-                    samples.append(i)
-            sampler = SubsetRandomSampler(samples)
-            dataloader = DataLoader(dataset, batch_size=1, num_workers=4, pin_memory=True, sampler=sampler)   
-        else:
-            dataloader = DataLoader(dataset, batch_size=1, num_workers=4, pin_memory=True, shuffle=True)      
-        
+        dataloader = DataLoader(dataset, batch_size=1, num_workers=4, pin_memory=True, shuffle=True)      
         dataloader_val = DataLoader(val_dataset, batch_size=1, num_workers=4, pin_memory=True)
 
         if args['ckpt_path'] is not None:

@@ -28,7 +28,11 @@ def k2i_numpy(x, ax=None):
         axes=ax,
     )
 
-
+def i2k_numpy(x, ax=None):
+    if ax is None:
+        ax = [-2, -1]
+    return scipy.fft.fftshift(scipy.fft.fftn(scipy.fft.ifftshift(x, axes=ax), axes=ax, norm="ortho", workers=-1),axes=ax)
+                            
 def complex2magflow(x, venc=None):
     """
     Convert complex 4D Flow images into magnitude and velocity.

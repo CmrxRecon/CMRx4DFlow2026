@@ -58,7 +58,10 @@ class OwnDataset(Dataset):
 		else:
 			first_bin = random.randint(-self.T_size+1, total_bins-self.T_size)  # any cardiac bin can be in the center (allows wrapping)
 			cardiac_bins = list(range(first_bin, first_bin+self.T_size)) if self.options['mode'] == 'train' else list(range(total_bins))
-
+		# V, C, T, FE, PE, SPE
+		# C, FE, PE, SPE
+		# FE, PE, SPE
+		# V, 1, T, 1, PE, SPE
 		f = np.load(self.filename[idx][0] / self.input, mmap_mode='c')[:, :, cardiac_bins, 0, self.filename[idx][1]:self.filename[idx][1]+self.D_size, :, :].astype(np.complex64)
 		c = np.load(self.filename[idx][0] / 'coilmap_full.npy', mmap_mode='c')[:, self.filename[idx][1]:self.filename[idx][1]+self.D_size, :, :].astype(np.complex64)
 		s = np.load(self.filename[idx][0] / 'segmentation_full.npy', mmap_mode='c')[self.filename[idx][1]:self.filename[idx][1]+self.D_size, :, :] if self.is_brain else np.array([0])

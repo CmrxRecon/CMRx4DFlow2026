@@ -91,7 +91,7 @@ def AngErr(pred, gt, segmask=None, eps=1e-8):
     segmask : shape (SPE, PE, FE)
 
     Angle per voxel/time:
-        acos( |<p,g>| / (||p||·||g|| + eps) )
+        acos( <p,g> / (||p||·||g|| + eps) )
     then averaged inside mask over (Nt,SPE,PE,FE).
     """
     pred = np.asarray(pred, dtype=np.float32)
@@ -101,7 +101,7 @@ def AngErr(pred, gt, segmask=None, eps=1e-8):
         segmask = np.ones(gt.shape[-3:], dtype=bool)
     segmask = np.asarray(segmask, dtype=bool)
 
-    dot = np.abs(np.sum(pred * gt, axis=0))  # (Nt,SPE,PE,FE)
+    dot = np.sum(pred * gt, axis=0)  # (Nt,SPE,PE,FE)
     norm_p = np.linalg.norm(pred, axis=0)
     norm_g = np.linalg.norm(gt, axis=0)
     cos_sim = np.clip(dot / (norm_p * norm_g + eps), 0.0, 1.0)

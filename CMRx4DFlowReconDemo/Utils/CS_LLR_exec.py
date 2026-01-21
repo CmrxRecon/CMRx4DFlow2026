@@ -6,7 +6,7 @@ import argparse
 import numpy as np
 from .CS_LLR_utils import *
 
-def CS_LLR(lamb_tv, lamb_llr, ksp, coils, seg=False):
+def CS_LLR(lamb_tv, lamb_llr, ksp, coils, seg=False, dev='cuda:0'):
     torch.backends.cudnn.benchmark = True
     torch.backends.cudnn.benchmark = True
     torch.use_deterministic_algorithms = True
@@ -46,7 +46,6 @@ def CS_LLR(lamb_tv, lamb_llr, ksp, coils, seg=False):
                     
             with torch.no_grad():
                 dtype = torch.complex64
-                dev = 'cuda'
                 coils = coils.to(dev).to(dtype)
                 kspc = ksp_.to(dev).to(dtype)
                 

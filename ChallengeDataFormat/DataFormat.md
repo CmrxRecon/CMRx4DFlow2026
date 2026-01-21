@@ -1,25 +1,26 @@
 ## 0. ChallengeData Directory Structure
 
-    ChallengeData
+  ChallengeData
     ├─ TaskR1&R2
-    │  ├─ Aorta
-    │  │  ├─ TrainSet
-    │  │  │  └─ Center001
-    │  │  │     └─ UIH_30T_uMR890
-    │  │  │        └─ P007
-    │  │  │           ├─ kdata_full.mat
-    │  │  │           ├─ coilmap.mat
-    │  │  │           ├─ segmask.mat
-    │  │  │           └─ params.csv
-    │  │  └─ ValidationSet
-    │  │     └─ Center002
-    │  │        └─ Siemens_30T_VIDA
+    │  ├─ TrainSet
+    │  │  └─ Aorta
+    │  │     └─ Center001
+    │  │        └─ UIH_30T_uMR890
     │  │           └─ P007
-    │  │              ├─ kdata_ktGaussian10.mat
-    │  │              ├─ usmask_ktGaussian10.mat
+    │  │              ├─ kdata_full.mat
     │  │              ├─ coilmap.mat
     │  │              ├─ segmask.mat
     │  │              └─ params.csv
+    │  └─ ValidationSet
+    │     └─ Aorta
+    │        └─ Center002
+    │           └─ Siemens_30T_VIDA
+    │              └─ P007
+    │                 ├─ kdata_ktGaussian10.mat
+    │                 ├─ usmask_ktGaussian10.mat
+    │                 ├─ coilmap.mat
+    │                 ├─ segmask.mat
+    │                 └─ params.csv
 
 ## 1. Data Description
 
