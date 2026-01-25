@@ -4,7 +4,7 @@ import numpy as np
 import pandas as pd
 
 
-def read_params_csv(filepath: str) -> dict | None:
+def read_params_csv(filepath):
     """
     Read acquisition/reconstruction parameters from a CSV file.
 
@@ -48,7 +48,7 @@ def read_params_csv(filepath: str) -> dict | None:
         int_array_fields = {"matrix_size"}
         float_scalar_fields = {"RR", "FA", "TE", "TR", "field_strength"}
 
-        params: dict = {}
+        params = {}
 
         for key, value in row.items():
             if pd.isna(value):
@@ -77,7 +77,7 @@ def read_params_csv(filepath: str) -> dict | None:
         raise RuntimeError(f"Failed to read params CSV: {filepath}") from exc
 
 
-def save_mat(save_path: str, key: str, data, real_key: str = "real", imag_key: str = "imag") -> None:
+def save_mat(save_path, key, data, real_key="real", imag_key="imag"):
     """
     Save an array to a MAT v7.3-style HDF5 file.
 
@@ -118,7 +118,7 @@ def save_mat(save_path: str, key: str, data, real_key: str = "real", imag_key: s
             f.create_dataset(key, data=arr, compression="gzip", compression_opts=4)
 
 
-def load_mat(path: str, key: str, *, complex_mode: str = "auto"):
+def load_mat(path, key, complex_mode="auto"):
     """
     Lazily read a dataset from a MAT v7.3-style (HDF5) file.
 
@@ -165,7 +165,7 @@ def load_mat(path: str, key: str, *, complex_mode: str = "auto"):
     """
 
     class _Lazy:
-        def __init__(self, path: str, key: str):
+        def __init__(self, path, key):
             self.path = path
             self.key = key
             self._f = h5py.File(path, "r")
@@ -205,7 +205,7 @@ def load_mat(path: str, key: str, *, complex_mode: str = "auto"):
 
             raise ValueError("complex_mode must be one of: 'auto', 'struct', 'complex'")
 
-        def close(self) -> None:
+        def close(self):
             if getattr(self, "_f", None) is not None:
                 self._f.close()
                 self._f = None
@@ -217,7 +217,6 @@ def load_mat(path: str, key: str, *, complex_mode: str = "auto"):
             self.close()
 
     return _Lazy(path, key)
-
 
 
 def save_coo_npz(path, arr):
