@@ -1,4 +1,4 @@
-# CMRxRecon2025
+# CMRx4DFlow2026
 
 ## About Us
 **Welcome to the 4D Flow MRI Reconstruction Challenge 2026 (CMRx4DFlow2026)**
