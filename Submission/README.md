@@ -8,13 +8,13 @@ Name your zip file as `Submission.zip`.
 
 For each case, use the following path:
 
-`{Task}/{Anatomy}/ValidationSet/{Center}/{Vendor}/PXXX/img_ktGaussian{R}.mat`
+`{Task}/{ValidationSet or TestSet}/{Anatomy}/{Center}/{Vendor}/PXXX/img_ktGaussian{R}.npz`
 
-## `.mat` Format
+## `.npz` Format
+To avoid potential saving-format and compatibility issues, we **strongly recommend** exporting reconstructed images in **`.npz`** format using the utility function provided in this repository
 
-Each `img_ktGaussian{R}.mat` file must contain a single variable with:
+This helps ensure consistent serialization and better cross-environment compatibility when loading results for downstream evaluation and visualization.
 
-- **Key**: `img_ktGaussian`
-- **Array shape**: `(Nv, Nt, Nc, SPE, PE, FE)`
+For a complete, working example (including detailed function call instructions), please refer to:
 
-To avoid potential `.mat` formatting/compatibility issues, we strongly recommend saving reconstructed images with `CMRx4DFlowReconDemo.Utils.dataloading.save_mat` provided in this repository.
+- [`CMRx4DFlowReconDemo.3_DataSavingDemo`](https://https://github.com/CmrxRecon/CMRx4DFlow2026/tree/main/CMRx4DFlowReconDemo/4_EvaluationDemo)

@@ -1,0 +1,60 @@
+# ignore the following filetypes
+*.sif
+*.png
+*.npy
+*.pkl
+*.cfl
+*.hdr
+*.h5
+# ignore all files in the following directories
+__pycache__/
+.idea/
+.ipynb_checkpoints/
+data/
+results/
+lightning_logs/
+
+# Windows default autosave extension
+*.asv
+
+# OSX / *nix default autosave extension
+*.m~
+
+
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+
+experiments/.DS_Store
+
+# Python
+*.pyc
+*.pyo
+*.egg-info/
+__pycache__/
+*.egg
+*.venv/
+*.virtualenv/
+*.log
+
+# MATLAB
+*.mat
+*.fig
+*.m~
+*.asv
+*.mdl
+*.sim
+slprj/
+
+# PyTorch
+*.pt
+*.pth
+
+# General
+.DS_Store
+*.bak
+*.swp
+*.swo
+DataPrep/
+**/__pycache__/
+/CMRx4DFlowReconDemo/2_FlowVNDemo/

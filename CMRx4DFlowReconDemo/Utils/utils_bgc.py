@@ -8,6 +8,7 @@ import numpy as np
 from skimage import filters
 from einops import rearrange
 
+
 def execute_MSAC(im, corr_fit_order=3, th=0.01):
     """
     dimensions if 4d [dim1 dim2 slice time velocity]
@@ -15,7 +16,7 @@ def execute_MSAC(im, corr_fit_order=3, th=0.01):
     """
     np.random.seed(274612)
     im = rearrange(im, 'nv nt spe pe fe -> fe pe spe nt nv')
-    im = im[..., 1:] * np.conj(im[..., 0:1]) / np.abs(im[..., 0:1])
+    im = im[..., 1:] * np.conj(im[..., 0:1]) / (np.abs(im[..., 0:1])+1e-9)
     phase_im_t = np.angle(im) / np.pi  # scale to [-1,1] (m n l t d)
     magnitude_im_t = np.abs(im)
 

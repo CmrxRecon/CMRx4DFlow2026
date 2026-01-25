@@ -5,31 +5,42 @@ from .pytorch_ssim import *
 def _to_tensor(x):
     return x if isinstance(x, torch.Tensor) else torch.as_tensor(x)
 
-def SSIM(pred, gt):
+def SSIM(pred, gt, segmask):
     """
-    pred/gt supported shapes:
-      - (Nv, Nt, SPE, PE, FE)  -> treated as (N, C, D, H, W) with N=Nv, C=Nt
-      - (Nt, SPE, PE, FE)      -> treated as N=1, C=Nt
-      - (SPE, PE, FE)          -> treated as N=1, C=1
+    SSIM within segmask (3D). Returns the mean SSIM over voxels where segmask==1.
+
+    pred, gt: shape (Nv, Nt, SPE, PE, FE)
+    segmask : shape (SPE, PE, FE)
+
+    Note:
+        This implementation is adapted from:
+        https://github.com/jinh0park/pytorch-ssim-3D
     """
-    ssim = SSIM3D(window_size=11)
+    ssim_fn = SSIM3D(window_size=11, size_average=False)
 
-    pred = _to_tensor(pred).float()
-    gt   = _to_tensor(gt).float()
+    # Mask to ROI (broadcast across Nv and Nt).
+    pred = pred * segmask[None, None]
+    gt   = gt   * segmask[None, None]
 
-    if pred.ndim == 5:          # (Nv, Nt, SPE, PE, FE)
-        pred_t = pred
-        gt_t   = gt
-    elif pred.ndim == 4:        # (Nt, SPE, PE, FE)
-        pred_t = pred.unsqueeze(0)
-        gt_t   = gt.unsqueeze(0)
-    elif pred.ndim == 3:        # (SPE, PE, FE)
-        pred_t = pred.unsqueeze(0).unsqueeze(0)
-        gt_t   = gt.unsqueeze(0).unsqueeze(0)
-    else:
-        raise ValueError(f"Unsupported ndim={pred.ndim}, expected 3/4/5.")
+    # Normalize by masked GT maximum.
+    gt_max = np.max(gt)
+    pred = pred / gt_max
+    gt   = gt   / gt_max
 
-    return ssim(pred_t, gt_t).item()
+    pred_t = _to_tensor(pred).float()
+    gt_t   = _to_tensor(gt).float()
+
+    # SSIM map: (Nv, Nt, SPE, PE, FE)
+    ssim_map = ssim_fn(pred_t, gt_t)
+    # Mean SSIM over ROI voxels (segmask == 1), per (Nv, Nt).
+    roi = _to_tensor(segmask.astype(bool)).to(ssim_map.device)  # (SPE, PE, FE)
+    roi = roi.unsqueeze(0).unsqueeze(0)                         # (1, 1, SPE, PE, FE)
+
+    roi_sum = (ssim_map * roi).sum()
+    roi_cnt = roi.sum().clamp_min(1.0) * gt.shape[1] * gt.shape[0]
+
+    return (roi_sum / roi_cnt).item()
+
 
 def nRMSE(pred, gt, segmask=None, eps=1e-12):
     """
