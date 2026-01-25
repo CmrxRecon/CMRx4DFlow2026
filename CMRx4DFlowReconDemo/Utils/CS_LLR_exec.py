@@ -96,7 +96,6 @@ def CS_LLR(lamb_tv, lamb_llr, ksp, coils, seg=False, dev='cuda:0'):
                 
         with torch.no_grad():
             dtype = torch.complex64
-            dev = 'cuda'
             coils = coils.to(dev).to(dtype)
             kspc = ksp.to(dev).to(dtype)
             
