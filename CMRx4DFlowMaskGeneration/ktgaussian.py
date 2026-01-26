@@ -182,8 +182,8 @@ def fun_mask_gen_2d(
     if (center_radius_x <= 0.5) or (center_radius_y <= 0.5):
         # Fallback: only sample the exact center point.
         center_ellipse = np.zeros((height, width), dtype=bool)
-        cy = int(round((height - 1) / 2))
-        cx = int(round((width - 1) / 2))
+        cy = height // 2
+        cx = width // 2
         center_ellipse[cy, cx] = True
     else:
         # Fully-sampled central ellipse.

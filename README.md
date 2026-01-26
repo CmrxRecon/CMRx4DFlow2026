@@ -5,9 +5,11 @@
 —an integral part of the 29th International Conference on Medical Image Computing and Computer Assisted Intervention (MICCAI 2026), hosted in Abu Dhabi, United Arab Emirates, from October 4th to 8th, 2026. LEARN MORE (MICCAI 2026 - 29. International Conference On Medical Image Computing & Computer Assisted Intervention)
 
 [Website](https://cmrxrecon.github.io/2026) |
-[Dataset](TODO) |
-[GitHub](https://github.com/CmrxRecon/CMRx4DFlow2026/) |
+[Dataset](https://www.synapse.org/Synapse:syn64545434) |
 [Publications](#publication-references)
+
+![IntroImage](https://github.com/CmrxRecon/CMRx4DFlow2026/blob/main/Intro2026.png)
+
 ### Background
 
 - **What 4D Flow MRI is:** A **3D + time** MRI technique that captures blood-flow dynamics across the full cardiac cycle. Beyond anatomy, it enables **quantitative** hemodynamic measures such as **flow velocity**, **wall shear stress (WSS)**, and **vorticity**—effectively creating a cardiovascular **digital twin**.
@@ -67,13 +69,13 @@
             <td class="center">10+</td>
             <td>Healthy individuals; patients with multi-organ diseases (heart, brain, aorta, kidney, liver, carotid artery)</td>
             <td>3D Cartesian (k-t Gaussian)</td>
-            <td class="subjects">~500</td>
+            <td class="subjects">~400</td>
         </tr>
     </tbody>
 </table>
 
 ## Challenge tasks
-To bridge the gap between research and clinical deployment, the **2026 challenge** utilizes over **500 cases** from **10+ centers** to evaluate reconstruction performance across four specific dimensions:
+To bridge the gap between research and clinical deployment, the **2026 challenge** utilizes over **400 cases** from **10+ centers** to evaluate reconstruction performance across four specific dimensions:
 
 *   **Regular Task 1: Accurate Reconstruction under High Acceleration** – To evaluate the **robustness and generalization performance** of reconstruction models under **high (10x-50x) acceleration factors** across different clinical centers and various scanners.
 *   **Regular Task 2: Fast Reconstruction under Limited Computing Resources** – To evaluate the **clinical performance and computational efficiency** of reconstruction models across **standardized hardware (NVIDIA A6000)**.
@@ -87,6 +89,8 @@ To bridge the gap between research and clinical deployment, the **2026 challenge
 * `CMRx4DFlowMaskGeneration`: contains code for varied undersampling mask generation
 * `ChallengeDataFormat`: contains image quality evaluation code for validation and testing
 * `Submission`: contains the structure for challenge submission
+
+
 
 ## Publication references
 
@@ -116,6 +120,6 @@ You are free to use and/or refer to the CMRx4DFlow2026 challenge and datasets in
 
 **References of the images cited in this website**
 1. https://commons.wikimedia.org/w/index.php?curid=53001321.
-2. Sandino, Christopher M., et al. Accelerated abdominal 4D flow MRI using 3D golden-angle cones trajectory. Proceedings of the Proc Ann Mtg ISMRM, Honolulu, HI, USA (2017): 22-27. 
+2. Sandino, Christopher M., et al. Accelerated abdominal 4D flow MRI using 3D golden-angle cones trajectory. Proceedings of the Proc Ann Mtg ISMRM, Honolulu, HI, USA (2017): 22-27. 
 3. Rice J, et al. In Vitro 4D Flow MRI for the Analysis of Aortic Coarctation. Proc. Intl. Soc. Mag. Reson. Med. 30 (2022): 0088.Doi: https://doi.org/10.58530/2022/0088
-4. Peper, Eva S., et al. 10-fold accelerated 4D flow in the carotid arteries at high spatiotemporal resolution in 7 minutes using a novel 15 channel coil. Proceedings of the 24th Annual Meeting of ISMRM, Singapore. 2016.
+4. Peper, Eva S., et al. 10-fold accelerated 4D flow in the carotid arteries at high spatiotemporal resolution in 7 minutes using a novel 15 channel coil. Proceedings of the 24th Annual Meeting of ISMRM, Singapore. 2016.

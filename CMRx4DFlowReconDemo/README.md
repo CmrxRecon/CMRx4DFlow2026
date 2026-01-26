@@ -1,32 +1,78 @@
-# CMRx4DFlowReconDemo
 
-This demo contains several Jupyter notebooks (`*.ipynb`) organized into the following parts:
+## Repository Structure
 
-Demo data can be downloaded from the following page : [Demo Data Downloading](TODO)
+The demos are split into two folders:
 
-### 0) DataLoading Demo
+- **`./ForRecon/`** — everything a participant needs to:
+  1) load data,  
+  2) simulate undersampling,  
+  3) reconstruct,  
+  4) save results in a **submission-ready format**.  
 
-This demo focuses on data loading for 4D Flow MRI. It shows how to read the raw multi-coil k-space and metadata, perform basic coil combination with coil sensitivity maps, and compute velocity maps from the complex 4D Flow data.
+- **`./ForEvaluation/`** — shows how the submissions evaluated:
+  - applies **background phase correction** to the submitted reconstructions,
+  - computes metrics by comparing against the **fully sampled ground truth**,
+  - includes batch reconstruction and batch evaluation scripts.
 
-### 1) Undersampling Demo
+---
 
-This demo introduces the undersampling workflow for 4D Flow MRI.
-It shows how to generate an undersampling mask (via the provided mask-generation functions), how to apply the mask to fully-sampled multi-coil k-space to simulate accelerated acquisition, and how to reconstruct a zero-filled image by inverse FFT followed by coil combination with sensitivity maps.
+## Contents
 
-### 2.1) Compressed Sensing Reconstruction
-This demo shows how to reconstruct undersampled 4D Flow MRI using total variation (TV) and locally low-rank (LLR) compressed sensing.
-It walks through setting up the reconstruction problem for undersampled multi-coil k-space and running the iterative solver to recover complex 4D Flow images for subsequent velocity analysis.
+### `ForRecon/` (Participant Workflow)
 
-### 2.2) Flow Variational Network (FlowVN) Reconstruction (WIP)
-This demo introduces the Flow Variational Network (FlowVN) pipeline.
-It explains how to train FlowVN on 4D Flow MRI data (data preparation, network configuration, and training loop), and how to run FlowVN inference to reconstruct images from undersampled k-space, producing reconstructions that can be used directly for downstream flow quantification.
+#### 0) DataLoading Demo
+Demonstrates how to load 4D Flow MRI data:
+- read raw **multi-coil k-space** and metadata,
+- coil combination using **coil sensitivity maps**,
+- compute velocity maps from complex 4D Flow data.
 
-### 3) DataSaving Demo
-This demo shows how to save reconstructed images into the submission-ready format. 
+#### 1) Undersampling Demo
+Demonstrates the undersampling simulation workflow:
+- generate an undersampling mask (using provided mask-generation utilities),
+- apply the mask to fully sampled multi-coil k-space to simulate accelerated acquisition,
+- perform a **zero-filled** reconstruction (IFFT + coil combination).
 
-### 4) PostProcessing Demo
-This demo focuses on post-processing steps specific to 4D Flow MRI, in particular background phase correction.
-Because phase offsets can bias velocity measurements, the evaluation pipeline applies background phase correction to uploaded reconstructions first, and then compares the corrected results against the fully-sampled image when computing metrics.
+#### 2.1) Compressed Sensing Reconstruction (TV / LLR)
+Demonstrates compressed sensing reconstruction from undersampled multi-coil k-space:
+- set up the reconstruction problem,
+- run an iterative solver with **total variation (TV)** and **locally low-rank (LLR)** regularization,
+- output complex 4D Flow images for downstream velocity analysis.
 
-### 5) Evaluation Demo
-This demo describes the evaluation procedure, including the metrics used and the validation workflow.
+#### 2.2) Flow Variational Network (FlowVN) Reconstruction
+Introduces the Flow Variational Network (FlowVN) pipeline, including both training and inference for 4D Flow MRI reconstruction from undersampled k-space.
+
+This implementation is adapted and modified from the original FlowMRI-Net codebase:
+https://gitlab.ethz.ch/ibt-cmr/publications/flowmri_net
+
+#### 3) DataSaving Demo
+Shows how to export reconstructions to the **submission-ready format** expected by the evaluation pipeline.
+
+---
+
+### `ForEvaluation/` (Evaluation Workflow)
+
+#### 4) PostProcessing Demo (Background Phase Correction)
+Demonstrates evaluation-specific post-processing:
+- apply **background phase correction** to reconstructed phase/velocity,
+- ensures phase offsets do not bias velocity measurements.
+
+> The evaluation pipeline applies background phase correction **before** computing metrics.
+
+#### 5) Evaluation Demo
+Describes the evaluation procedure:
+- validation workflow,
+- metrics computation using corrected reconstructions vs. fully sampled reference.
+
+#### Batch Scripts
+`ForEvaluation/` also includes utilities for bulk processing:
+
+- **`BatchRecon_FlowVN.py`**  
+  Batch reconstruction using FlowVN.
+
+- **`BatchRecon_CS.py`**  
+  Batch reconstruction using CS (TV/LLR).
+
+- **`BatchEval.py`**  
+  Batch evaluation: applies background phase correction and computes metrics for a set of reconstructed results.
+
+---
