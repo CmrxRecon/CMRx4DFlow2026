@@ -9,33 +9,44 @@ from torch import nn
 import torch.nn.functional as F
 from utils.misc_utils import *
 
-
 class FlowVN(nn.Module):
     def __init__(self, **kwargs):
         super(FlowVN, self).__init__()
         options = kwargs
         self.options = options
-        self.nc = options["num_stages"]  # number of iterations
-        self.exp_loss = options["exp_loss"]  # use exponentially weighted loss
+        self.nc = options["num_stages"]
+        self.exp_loss = options["exp_loss"]
 
-        self.cell_list = []
+        cells = []
         for i in range(self.nc):
-            self.cell_list.append(VnMriReconCell(block_id=i, **options))
-        self.cell_list = nn.ParameterList(self.cell_list)
+            cells.append(VnMriReconCell(block_id=i, **options))
+
+        # Use ModuleList to properly register submodules and their parameters.
+        self.cell_list = nn.ModuleList(cells)
 
     def forward(self, x, f, c):
         x = torch.view_as_real(x)
-        for i in range(self.nc):
-            block = self.cell_list[i]
-            x = block(x, f, c)
-            if self.exp_loss and self.options["mode"] == "train":
-                if i == 0:
-                    x_layers = x[None]
-                else:
-                    x_layers = torch.concatenate([x_layers, x[None]], dim=0)
+
+        # Momentum state is per-forward (i.e., per batch/sample path).
+        # This prevents cross-batch interference that would happen with a class-level cache.
+        S_prev = None
 
         if self.exp_loss and self.options["mode"] == "train":
+            x_layers = []
+
+        for i in range(self.nc):
+            block = self.cell_list[i]
+
+            # Each block returns both the updated image and the momentum state for the next block.
+            x, S_prev = block(x, f, c, S_prev)
+
+            if self.exp_loss and self.options["mode"] == "train":
+                x_layers.append(x)
+
+        if self.exp_loss and self.options["mode"] == "train":
+            x_layers = torch.stack(x_layers, dim=0)  # (K,N,V,T,D,H,W,2)
             return torch.view_as_complex(x_layers)
+
         return torch.view_as_complex(x)
 
 
@@ -286,10 +297,9 @@ class VnMriReconCell(nn.Module):
         self.pad_d = int((self.options["D_size"] - 1) / 2)
         self.sgd_momentum = self.options["sgd_momentum"]
 
-        # 注意：按你的要求，“最后一个”不改（即保留原来的 momentum list 问题）
         list = []  # shared list across instances to compute momentum term in gradient descent update
 
-    def forward(self, u_t_1, f, c):
+    def forward(self, u_t_1, f, c, S_prev=None):
         N, V, T, D, H, W, _ = u_t_1.shape
 
         # perform convolutions (real and imaginary parts in batch dimension -> same weights independently applied)
@@ -356,9 +366,22 @@ class VnMriReconCell(nn.Module):
         Du = torch.view_as_real(mri_adjoint_op(residual, c))
 
         # Update step
-        S = Ru * self.lamb_ru + Du * self.lamb_du
+        # Compute the per-iteration update (acts like the gradient step G^k).
+        G = Ru * self.lamb_ru + Du * self.lamb_du
+
+        # Momentum accumulation:
+        # S^k = G^k + alpha * S^{k-1}
+        # Note: S_prev is provided by FlowVN.forward and is local to this forward pass.
         if self.sgd_momentum:
-            if self.block_id > 0:
-                S += self.alpha * VnMriReconCell.list[0]
-            VnMriReconCell.list = [S]
-        return u_t_1 - S
+            if S_prev is None:
+                S = G
+            else:
+                S = G + self.alpha * S_prev
+        else:
+            S = G
+
+        # Gradient descent update with (optional) momentum.
+        u_next = u_t_1 - S
+
+        # Return both the updated image and the new momentum state.
+        return u_next, S

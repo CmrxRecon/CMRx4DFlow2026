@@ -12,9 +12,81 @@ from pytorch_lightning.loggers import TensorBoardLogger
 from utils.misc_utils import *
 # from utils.dataloader import OwnDataset
 from utils.dataloader_CMRx4DFlow import CMRx4DFlowDataSet
+import sys
+import time
+import csv
+sys.path.append('../')
+from Utils.utils_datasl import save_coo_npz
 from networks.flowvn import FlowVN
+class CMRSaveCallback(pl.Callback):
+    def __init__(self, save_dir):
+        self.save_dir = Path(save_dir)
+        self.save_dir.mkdir(parents=True, exist_ok=True)
+        self._cache = {}  # key -> {recon: {seg_idx: np}, seg: {seg_idx: np}, meta: dict, recon_ms_sum: float}
 
-                
+    def _key(self, meta: dict):
+        subj = meta.get("subj", "unknown")
+        R = int(meta.get("usrate", 0))
+        return (subj, R)
+
+    def on_test_batch_end(self, trainer, pl_module, outputs, batch, batch_idx, dataloader_idx=0):
+        meta = {k: outputs.get(k) for k in outputs.keys() if k != "recon"}
+
+        seg_idx = int(meta.get("seg_idx", 0))
+        recon_ms = meta.get("recon_ms", 0.0)
+
+        k = self._key(meta)
+        if k not in self._cache:
+            self._cache[k] = {"recon": {}, "seg": {}, "meta": meta, "recon_ms_sum": 0.0}
+
+        if recon_ms is not None:
+            self._cache[k]["recon_ms_sum"] += float(recon_ms)
+
+        recon = outputs["recon"].detach().cpu()
+        x = recon
+        if x.ndim == 5:
+            x = x[0]
+        if x.ndim != 4:
+            raise RuntimeError(f"Unexpected recon shape {tuple(recon.shape)} -> {tuple(x.shape)}")
+        x_np = x.numpy()
+
+        seg = batch["segmentation"]
+        if hasattr(seg, "detach"):
+            seg = seg.detach().cpu().numpy()
+        seg = seg.astype(bool)[0]
+        if seg.ndim != 3:
+            raise RuntimeError(f"Unexpected segmentation shape {tuple(seg.shape)} (expected (fe,pe,spe))")
+
+        self._cache[k]["recon"][seg_idx] = x_np
+        self._cache[k]["seg"][seg_idx] = seg
+        self._cache[k]["meta"] = meta
+
+    def on_test_epoch_end(self, trainer, pl_module):
+        for (subj, R), pack in self._cache.items():
+            recon_map = pack["recon"]
+            seg_map = pack["seg"]
+            if len(recon_map) == 0:
+                continue
+
+            seg_ids = sorted(recon_map.keys())
+
+            img = np.stack([recon_map[i] for i in seg_ids], axis=0)
+            img = np.transpose(img, (0, 1, 4, 3, 2))
+
+            pick = seg_ids[0]
+            s = seg_map[pick]
+            s = np.transpose(s, (2, 1, 0))
+            s = s[None, None, :, :, :]
+
+            save_coo_npz(str(self.save_dir / f"img_ktGaussian{R}.npz"), img * s)
+
+            csv_path = self.save_dir / f"recontime_ktGaussian{R}.csv"
+            with open(csv_path, "w", newline="") as f:
+                w = csv.writer(f)
+                w.writerow(["recontime"])
+                w.writerow([pack["recon_ms_sum"] / 1000.0])
+
+        self._cache.clear()
 class UnrolledNetwork(pl.LightningModule):
     def __init__(self, **kwargs):
         super().__init__()
@@ -102,32 +174,50 @@ class UnrolledNetwork(pl.LightningModule):
             self.logger.experiment.add_image('sample_recon',np.rot90(sample_img.astype(np.uint8), k=-1, axes=(1, 2)).astype(np.uint8),self.log_img_count)
             self.log_img_count += 1
         return {'avg_val_loss': loss}
-    
     @torch.inference_mode()
     def test_step(self, batch, batch_idx):
-        if self.options['T_size'] == -1 or self.options['network'] == "FlowVN":  # can take all cardiac bins
+        recon_ms = None
+        if torch.cuda.is_available():
+            start_event = torch.cuda.Event(enable_timing=True)
+            end_event = torch.cuda.Event(enable_timing=True)
+            torch.cuda.synchronize()
+            start_event.record()
+
+        if self.options['T_size'] == -1 or self.options['network'] == "FlowVN":
             recon_img = self.network(batch['imdata_p1'], batch['kdata_p1'], batch['coil_sens'])
-        else:  # sliding window reconstruction
-            window_t = self.options['T_size'] - 2  # do not save outer two bins
-            n_bins = batch['imdata_p1'].shape[2]  # number of bins to reconstruct
-            recon_img = torch.zeros_like(batch['imdata_p1'][:,:,0:1,:,:,:]).repeat(1,1,int(np.ceil(n_bins/window_t))*window_t,1,1,1)
-            for t in range(0, n_bins, window_t):  # sliding window
-                cardiac_bins = list(range(t-self.options['T_size']+1, t+1))
-                recon_img[:,:,t:t+window_t] = self.network(batch['imdata_p1'][:,:,cardiac_bins], batch['kdata_p1'][:,:,:,cardiac_bins], batch['coil_sens'])[:,:,1:-1]
-            recon_img = torch.roll(recon_img[:,:,:n_bins], shifts=-window_t, dims=2)  # remove duplicate bins and place bin 0 first
-  
-        save_dir = self.options['save_dir'] + '/' + batch['subj'][0] + '_' + self.options['ckpt_path'].split('/')[-1].split('.')[0]
-        if not os.path.exists(save_dir) or len(os.listdir(save_dir)) == 0:
-            empty_or_create(save_dir)
-            slice = 0
         else:
-            slice = max([int(x.split("slice")[-1].split(".")[-2]) for x in glob(save_dir + "/*")])+1
-        recon_img_complex = (recon_img[0]*batch['norm']).cpu()
-        img_save_dir = save_dir + '/slice' + str(slice) + '.npy'
-        np.save(img_save_dir, recon_img_complex)
+            window_t = self.options['T_size'] - 2
+            n_bins = batch['imdata_p1'].shape[2]
+            recon_img = torch.zeros_like(batch['imdata_p1'][:,:,0:1,:,:,:]).repeat(
+                1, 1, int(np.ceil(n_bins/window_t))*window_t, 1, 1, 1
+            )
+            for t in range(0, n_bins, window_t):
+                cardiac_bins = list(range(t-self.options['T_size']+1, t+1))
+                recon_img[:,:,t:t+window_t] = self.network(
+                    batch['imdata_p1'][:,:,cardiac_bins],
+                    batch['kdata_p1'][:,:,:,cardiac_bins],
+                    batch['coil_sens']
+                )[:,:,1:-1]
+            recon_img = torch.roll(recon_img[:,:,:n_bins], shifts=-window_t, dims=2)
 
-        return {'test_loss':torch.Tensor([0])}
+        if torch.cuda.is_available():
+            end_event.record()
+            torch.cuda.synchronize()
+            recon_ms = float(start_event.elapsed_time(end_event))
 
+        recon_img_complex = (recon_img[0] * batch['norm']).detach()
+
+        usrate = int(batch["usrate"][0]) if hasattr(batch["usrate"], "__len__") else int(batch["usrate"])
+        seg_idx = int(batch["seg_idx"][0]) if hasattr(batch["seg_idx"], "__len__") else int(batch["seg_idx"])
+        subj = batch["subj"][0] if isinstance(batch["subj"], (list, tuple)) else batch["subj"]
+
+        return {
+            "recon": recon_img_complex,
+            "subj": subj,
+            "seg_idx": seg_idx,
+            "usrate": usrate,
+            "recon_ms": recon_ms,
+        }
     def configure_optimizers(self):
         opt = torch.optim.Adam(self.parameters(),lr=self.options['lr']) 
         return {"optimizer": opt,
@@ -169,7 +259,9 @@ if __name__ == '__main__':
     parser.add_argument('--epoch',          		type=int,   default=100,      	help='number of training epoch')
     parser.add_argument('--batch_size',     		type=int,   default=1,        	help='batch size')
     parser.add_argument('--loss',       		    type=str,   default='',       	help='type of loss (ssdu or supervised)')
-    
+    parser.add_argument('--usrate', type=int, default=None, help='test only: ktGaussian undersampling rate')
+    parser.add_argument('--devices', type=int, nargs='+', default=[0],
+                        help='GPU device ids, e.g. --devices 0 or --devices 0 1 2 3')
     args = parser.parse_args()
     print_options(parser,args)
     args = vars(args)
@@ -183,17 +275,20 @@ if __name__ == '__main__':
 
     n_run = str(max((int(p.split("_")[-1]) for p in glob("./results/lightning_logs/*")), default=0) + 1)
     checkpoint_callback = pl.callbacks.ModelCheckpoint(save_top_k=1, save_weights_only=True, dirpath=save_dir, filename=n_run+'-{epoch}')  # save last checkpoint only
+
+    save_callback = CMRSaveCallback(
+            save_dir=args["save_dir"],
+        )
+    
     trainer = pl.Trainer(
         accelerator="gpu",
-        devices=[1],    
-        # devices=[1, 2, 3],    
-        # strategy='ddp_find_unused_parameters_true',          
+        devices=args["devices"],
+        strategy='ddp_find_unused_parameters_true' if len(args["devices"]) > 1 else "auto",
         max_epochs=args["epoch"],
-        accumulate_grad_batches=1,    
+        accumulate_grad_batches=1,
         logger=logger,
         gradient_clip_val=1.0,
-        # profiler="simple",
-        callbacks=[checkpoint_callback],
+        callbacks=[checkpoint_callback, save_callback],
     )
     dataset = CMRx4DFlowDataSet(**args)
     if args['mode'] == 'train':
@@ -201,8 +296,8 @@ if __name__ == '__main__':
         args_val['mode'] = 'val'
         val_dataset = CMRx4DFlowDataSet(**args_val)
         
-        dataloader = DataLoader(dataset, batch_size=1, num_workers=16, pin_memory=True, shuffle=True)     
-        dataloader_val = DataLoader(val_dataset, batch_size=1, num_workers=16, pin_memory=True)
+        dataloader = DataLoader(dataset, batch_size=1, num_workers=4, pin_memory=True, shuffle=True)     
+        dataloader_val = DataLoader(val_dataset, batch_size=1, num_workers=2, pin_memory=True)
 
         if args['ckpt_path'] is not None:
             model = UnrolledNetwork.load_from_checkpoint(args['ckpt_path'], **args)
@@ -211,7 +306,30 @@ if __name__ == '__main__':
         trainer.fit(model, train_dataloaders=dataloader, val_dataloaders=dataloader_val)
         
     elif args['mode'] == 'test':
-        dataloader = DataLoader(dataset, batch_size=1, num_workers=16, pin_memory=True)
-        
-        model = UnrolledNetwork.load_from_checkpoint(args['ckpt_path'], **args)
+        if args.get("usrate", None) is None:
+            raise ValueError("test mode requires --usrate, e.g. --usrate 10")
+
+        dataset = CMRx4DFlowDataSet(**args)  # dataset 内部会用 args['usrate']
+        dataloader = DataLoader(dataset, batch_size=1, num_workers=1, pin_memory=True)
+
+        save_callback = CMRSaveCallback(save_dir=args["save_dir"])
+
+        trainer = pl.Trainer(
+            accelerator="gpu",
+            devices=args["devices"],
+            max_epochs=args["epoch"],
+            logger=False,
+            callbacks=[save_callback],
+        )
+
+        if torch.cuda.is_available():
+            map_location = lambda storage, loc: storage.cuda(0)
+        else:
+            map_location = "cpu"
+
+        model = UnrolledNetwork.load_from_checkpoint(
+            args["ckpt_path"],
+            map_location=map_location,
+            **args
+        )
         trainer.test(model, dataloaders=dataloader)

@@ -32,20 +32,22 @@ Demonstrates the undersampling simulation workflow:
 - apply the mask to fully sampled multi-coil k-space to simulate accelerated acquisition,
 - perform a **zero-filled** reconstruction (IFFT + coil combination).
 
-#### 2.1) Compressed Sensing Reconstruction (TV / LLR)
+#### 2) Compressed Sensing Reconstruction (TV / LLR)
 Demonstrates compressed sensing reconstruction from undersampled multi-coil k-space:
 - set up the reconstruction problem,
 - run an iterative solver with **total variation (TV)** and **locally low-rank (LLR)** regularization,
 - output complex 4D Flow images for downstream velocity analysis.
 
-#### 2.2) Flow Variational Network (FlowVN) Reconstruction
+#### 3) DataSaving Demo
+Shows how to export reconstructions to the **submission-ready format** expected by the evaluation pipeline.
+
+
+#### Ex) Flow Variational Network (FlowVN) Reconstruction
 Introduces the Flow Variational Network (FlowVN) pipeline, including both training and inference for 4D Flow MRI reconstruction from undersampled k-space.
 
 This implementation is adapted and modified from the original FlowMRI-Net codebase:
 https://gitlab.ethz.ch/ibt-cmr/publications/flowmri_net
 
-#### 3) DataSaving Demo
-Shows how to export reconstructions to the **submission-ready format** expected by the evaluation pipeline.
 
 ---
 
@@ -66,13 +68,85 @@ Describes the evaluation procedure:
 #### Batch Scripts
 `ForEvaluation/` also includes utilities for bulk processing:
 
-- **`BatchRecon_FlowVN.py`**  
-  Batch reconstruction using FlowVN.
+## BatchRecon_CS.py
+Batch reconstruction using CS (TV/LLR).
 
-- **`BatchRecon_CS.py`**  
-  Batch reconstruction using CS (TV/LLR).
+### What it does
+- Recursively scans `--path_recon` for case folders containing `kdata_ktGaussian{R}.mat` (and required side files).
+- Runs CS-LLR reconstruction for each case and each `R`.
+- Saves outputs to `--path_save` while preserving the same relative folder structure.
 
-- **`BatchEval.py`**  
-  Batch evaluation: applies background phase correction and computes metrics for a set of reconstructed results.
+### Required files per case (for each R)
+- `kdata_ktGaussian{R}.mat`, `usmask_ktGaussian{R}.mat`, `segmask.mat`, `coilmap.mat`
 
+### Outputs (per case, per R) saved under
+`<path_save>/<same relative path as in path_recon>/`
+- `img_ktGaussian{R}.npz` (recon, masked by segmask)
+- `recontime_ktGaussian{R}.csv` (single value: seconds)
+
+### Example
+``` bash
+python BatchRecon_CS.py \
+  --path_recon "/mnt/nas/nas3/openData/rawdata/4dFlow/ChallengeData/TaskR1&R2/ValidationSet/Aorta/Center012/Philips_15T_Ambition" \
+  --path_save  "/mnt/nas/nas3/openData/rawdata/4dFlow/ChallengeData_CS/TaskR1&R2/ValidationSet/Aorta/Center012/Philips_15T_Ambition" \
+  --device cuda:0 \
+  --Rs 10 20 \
+  --lamb_llr 10=0.5 20=1.0
+```
+
+## BatchRecon_FlowVN.py
+Batch reconstruction using FlowVN (test mode).
+
+### What it does
+- Recursively scans `--path_recon` for valid case folders for each `R`.
+- Calls FlowVN `main.py --mode test` for each case.
+- Saves FlowVN outputs to `--path_save` with the same relative folder structure.
+
+### Required files per case (for each R)
+- `kdata_ktGaussian{R}.mat`, `usmask_ktGaussian{R}.mat`, `segmask.mat`, `coilmap.mat`, `params.csv`
+
+### Outputs
+Saved under:
+`<path_save>/<same relative path as in path_recon>/`
+- FlowVN test outputs written by FlowVN into `--save_dir` (script sets `--save_dir` to this folder)
+
+### Example
+``` bash
+python BatchRecon_FlowVN.py \
+  --path_recon "/mnt/nas/nas3/openData/rawdata/4dFlow/ChallengeData/TaskR1&R2/ValidationSet/Aorta/Center012/Philips_15T_Ambition" \
+  --path_save  "/mnt/nas/nas3/openData/rawdata/4dFlow/ChallengeData_FlowVN/TaskR1&R2/ValidationSet/Aorta/Center012/Philips_15T_Ambition" \
+  --cuda_visible_devices 0 \
+  --Rs 10 20 \
+  --ckpt_path "../FlowVN/weights/12-epoch=0.ckpt" \
+  --network FlowVN --features_in 1 --T_size 5 --features_out 8 \
+  --kernel_size 5 --num_stages 10 --loss supervised
+```
+
+## BatchEval.py
+Batch evaluation for recon results (phase correction + metrics).
+
+### What it does
+- Recursively finds recon files: `**/img_ktGaussian*.npz` under `--path_recon`.
+- For each case, loads GT from `--path_gt/<same relative path>/img_gt.npz` and `segmask.mat`.
+- Applies background phase correction, then computes metrics:
+  - magnitude: SSIM, nRMSE
+  - flow: RelErr, AngErr (deg)
+- Reads runtime from `recontime_ktGaussian{R}.csv` if present.
+
+### Inputs
+- Recon files:
+  `<path_recon>/**/img_ktGaussian{R}.npz`
+- GT files:
+  `<path_gt>/<same rel_dir>/img_gt.npz` and `<path_gt>/<same rel_dir>/segmask.mat`
+
+### Output
+- Writes a single CSV table to `--out_csv` (one row per case per R)
+
+### Example
+```bash
+python BatchEval.py \
+  --path_recon "/mnt/nas/nas3/openData/rawdata/4dFlow/ChallengeData_FlowVN/TaskR1&R2" \
+  --path_gt   "/mnt/nas/nas3/openData/rawdata/4dFlow/ChallengeData_GT/TaskR1&R2" \
+  --out_csv   "/mnt/nas/nas3/openData/rawdata/4dFlow/ChallengeData_FlowVN/TaskR1&R2/results.csv"
+```
 ---
