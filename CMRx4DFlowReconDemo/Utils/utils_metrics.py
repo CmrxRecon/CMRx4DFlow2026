@@ -5,7 +5,7 @@ from .pytorch_ssim import *
 def _to_tensor(x):
     return x if isinstance(x, torch.Tensor) else torch.as_tensor(x)
 
-def SSIM(pred, gt, segmask):
+def SSIM(pred, gt, segmask=None):
     """
     SSIM within segmask (3D). Returns the mean SSIM over voxels where segmask==1.
 
@@ -16,6 +16,8 @@ def SSIM(pred, gt, segmask):
         This implementation is adapted from:
         https://github.com/jinh0park/pytorch-ssim-3D
     """
+    if segmask is None:
+        segmask = np.ones(gt.shape[-3:], dtype=bool)
     ssim_fn = SSIM3D(window_size=11, size_average=False)
 
     # Mask to ROI (broadcast across Nv and Nt).
