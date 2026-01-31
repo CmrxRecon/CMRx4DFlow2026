@@ -8,7 +8,7 @@
 [Dataset](https://www.synapse.org/Synapse:syn64545434) |
 [Publications](#publication-references)
 
-![IntroImage](https://github.com/CmrxRecon/CMRx4DFlow2026/blob/main/Intro2026.png)
+![IntroImage](https://github.com/CmrxRecon/CMRx4DFlow2026/blob/main/Intro2026.gif)
 
 ### Background
 
