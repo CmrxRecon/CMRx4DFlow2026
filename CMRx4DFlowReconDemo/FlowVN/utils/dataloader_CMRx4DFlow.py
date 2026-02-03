@@ -1,7 +1,3 @@
-# =========================
-# 1) DataSet: in test mode run only one --usrate, and emit samples per seg_idx
-#    In test mode filename stores [case_dir, slice_start(fixed 0), usrate(fixed), seg_idx]
-# =========================
 import os
 import sys
 import random
@@ -11,12 +7,12 @@ import numpy as np
 from einops import rearrange
 from torch.utils.data import Dataset
 
-sys.path.append('../')
-from Utils.utils_datasl import load_mat
+sys.path.append("../")
+from Utils.utils_datasl import load_mat, read_params_csv
 from Utils.utils_flow import k2i_numpy
 from utils.partitioning import uniform_disjoint_selection
 
-sys.path.append('../../')
+sys.path.append("../../")
 from CMRx4DFlowMaskGeneration import fun_mask_gen_2d
 from utils.misc_utils import mriAdjointOp
 
@@ -24,14 +20,15 @@ REQUIRED_FILES = ("kdata_full.mat", "coilmap.mat", "segmask.mat", "params.csv")
 
 DEFAULT_OPTS = {
     "train_roots": [
-        "/mnt/nas/nas3/openData/rawdata/4dFlow/ChallengeData/TaskR1&R2/TrainSet/Aorta/",
-        # "/mnt/nas/nas3/openData/rawdata/4dFlow/ChallengeData/TaskR1&R2/TrainSet/Aorta/Center012/Philips_15T_Ambition",
+        "/SSDHome/share/4dFlow/ChallengeData/TaskR1&R2/TrainSet/",
+        # "/SSDHome/share/4dFlow/ChallengeData/TaskR1&R2/ValidationSet/Aorta/Center012/Philips_30T_Ingenia"
     ],
     "val_roots": [
-        "/mnt/nas/nas3/openData/rawdata/4dFlow/ChallengeData/TaskR1&R2/ValidationSet/Aorta/"
-        # "/mnt/nas/nas3/openData/rawdata/4dFlow/ChallengeData/TaskR1&R2/ValidationSet/Aorta/Center012/Philips_15T_Ambition"
+        "/SSDHome/share/4dFlow/ChallengeData/TaskR1&R2/ValidationSet/"
+        # "/SSDHome/share/4dFlow/ChallengeData/TaskR1&R2/ValidationSet/Aorta/Center012/Philips_30T_Ingenia"
     ],
 }
+
 
 def find_valid_cases(roots, required_files=REQUIRED_FILES, anchor="kdata_full.mat"):
     req = tuple(required_files)
@@ -50,6 +47,7 @@ def find_valid_cases(roots, required_files=REQUIRED_FILES, anchor="kdata_full.ma
     out.sort()
     return out
 
+
 def load_usmask_ktGaussian(case_dir, usrate, Nt, SPE, PE):
     mask_path = Path(case_dir) / f"usmask_ktGaussian{usrate}.mat"
     if not mask_path.is_file():
@@ -63,19 +61,20 @@ def load_usmask_ktGaussian(case_dir, usrate, Nt, SPE, PE):
     mask = rearrange(m, "spe pe t -> 1 1 t 1 pe spe").astype(np.float32)
     return mask
 
+
 def sorted_read_then_gather(x, axis, idx, fixed_slices=None):
     idx = np.asarray(idx, dtype=np.int64)
-    order = np.argsort(idx)
-    idx_sorted = idx[order]
-    key = [slice(None)] * len(x.shape)
+    uniq, inv = np.unique(idx, return_inverse=True)
+    ndim = len(x.shape)
+    key = [slice(None)] * ndim
     if fixed_slices:
         for ax, sl in fixed_slices.items():
             key[ax] = sl
-    key[axis] = idx_sorted
-    out_sorted = x[tuple(key)]
-    inv = np.empty_like(order)
-    inv[order] = np.arange(order.size)
-    return np.take(out_sorted, inv, axis=axis)
+    key[axis] = uniq
+    out_uniq = x[tuple(key)]
+    out = np.take(out_uniq, inv, axis=axis)
+    return out
+
 
 class CMRx4DFlowDataSet(Dataset):
     def __init__(self, **kwargs):
@@ -108,47 +107,47 @@ class CMRx4DFlowDataSet(Dataset):
 
         self.filename = []
 
+        def add_case(case_dir: str):
+            case_dir = str(case_dir)
+            if mode == "test":
+                Nv = 4
+                for seg_i in range(Nv):
+                    self.filename.append([case_dir, 0, self.test_usrate, int(seg_i)])
+                return
+
+            kdata = load_mat(str(Path(case_dir) / "kdata_full.mat"), "kdata_full")
+            Nx = int(kdata.shape[-1])
+
+            slice_starts = [0] if mode == "val" else (
+                list(range(0, Nx - self.D_size + 1)) if self.D_size != -1 else [0]
+            )
+
+            for i in slice_starts:
+                if mode == "train":
+                    self.filename.append([case_dir, int(i), None, None])
+                else:
+                    Nv = 4
+                    for u in self.usrate_list:
+                        for seg_i in range(Nv):
+                            self.filename.append([case_dir, int(i), int(u), int(seg_i)])
+
         if self.input is not None and str(self.input) != "":
             case_dir = Path(self.input)
             if not case_dir.exists():
                 raise FileNotFoundError(f"Input path does not exist: {case_dir}")
-            case_dir = str(case_dir)
-
-            if mode == "test":
-                kdata = load_mat(str(Path(case_dir) / "kdata_full.mat"), "kdata_full")
-                Nv_test = int(kdata.shape[0])
-                for seg_i in range(Nv_test):
-                    self.filename.append([case_dir, 0, self.test_usrate, int(seg_i)])
-            else:
-                kdata = load_mat(str(Path(case_dir) / "kdata_full.mat"), "kdata_full")
-                Nx = int(kdata.shape[-1])
-                slice_starts = [0] if mode == "val" else list(range(0, Nx - self.D_size + 1)) if self.D_size != -1 else [0]
-                for i in slice_starts:
-                    if mode == "train":
-                        self.filename.append([case_dir, int(i), None, None])
-                    else:
-                        for u in self.usrate_list:
-                            self.filename.append([case_dir, int(i), int(u), 0])
+            add_case(case_dir)
         else:
             roots = options.get(f"{mode}_roots", [])
             subjects = find_valid_cases(roots)
-
             for patient_dir in subjects:
-                if mode == "test":
-                    seg = load_mat(str(Path(patient_dir) / "segmask.mat"), "segmask")
-                    Nv_test = int(seg.shape[0]) if seg.ndim == 4 else 1
-                    for seg_i in range(Nv_test):
-                        self.filename.append([patient_dir, 0, self.test_usrate, int(seg_i)])
-                else:
-                    kdata = load_mat(str(Path(patient_dir) / "kdata_full.mat"), "kdata_full")
-                    Nx = int(kdata.shape[-1])
-                    slice_starts = [0] if mode == "val" else list(range(0, Nx - self.D_size + 1)) if self.D_size != -1 else [0]
-                    for i in slice_starts:
-                        if mode == "train":
-                            self.filename.append([patient_dir, int(i), None, None])
-                        else:
-                            for u in self.usrate_list:
-                                self.filename.append([patient_dir, int(i), int(u), 0])
+                add_case(patient_dir)
+
+        if mode != "train":
+            self.filename.sort(key=lambda x: (str(x[0]), int(x[2]), int(x[1]), int(x[3])))
+
+    def group_fn_from_filename(dataset, idx: int):
+        case_dir, slice_start, usrate, seg_idx = dataset.filename[idx]
+        return (str(case_dir), int(usrate), int(slice_start))
 
     def __len__(self):
         return len(self.filename)
@@ -166,6 +165,7 @@ class CMRx4DFlowDataSet(Dataset):
 
         c = load_mat(str(Path(case_dir) / "coilmap.mat"), "coilmap")
         s = load_mat(str(Path(case_dir) / "segmask.mat"), "segmask")
+        params = read_params_csv(str(Path(case_dir) / "params.csv"))
 
         if stored_seg_idx is None:
             if mode == "train" and self.network == "FlowVN":
@@ -200,9 +200,12 @@ class CMRx4DFlowDataSet(Dataset):
                 cardiac_bins = list(range(first_bin, first_bin + self.T_size))
             else:
                 cardiac_bins = list(range(Nt))
+
         bins = np.mod(cardiac_bins, Nt).astype(np.int64)
 
-        f = sorted_read_then_gather(f, axis=1, idx=bins, fixed_slices={0: slice(seg_idx, seg_idx + 1)})
+        f = sorted_read_then_gather(
+            f, axis=1, idx=bins, fixed_slices={0: slice(seg_idx, seg_idx + 1)}
+        )
 
         f = k2i_numpy(f, ax=[-1])[..., slice_start:slice_end]
 
@@ -218,10 +221,12 @@ class CMRx4DFlowDataSet(Dataset):
             total_points = (PE * SPE) // usrate
             masks_spe_pe_t = fun_mask_gen_2d(
                 mask_size=(PE, SPE),
-                center_radius_x=0.5, center_radius_y=0.5,
+                center_radius_x=0.5,
+                center_radius_y=0.5,
                 total_points=total_points,
                 pattern_num=Nt,
-                sigma_x=PE/5, sigma_y=SPE/5,
+                sigma_x=PE / 5,
+                sigma_y=SPE / 5,
                 min_dist_factor=3,
                 rep_decay_factor=0.5,
             )
@@ -233,7 +238,9 @@ class CMRx4DFlowDataSet(Dataset):
 
         f = rearrange(f, "nv nt nc spe pe fe -> nv nc nt fe pe spe")
         c = rearrange(c, "nc spe pe fe -> nc fe pe spe")
+        c = c / np.sqrt(np.sum(np.abs(c) ** 2, axis=0, keepdims=True))
         s = rearrange(s, "spe pe fe -> fe pe spe")
+
         f *= mask
         im = rearrange(im, "nv nt spe pe fe -> nv nt fe pe spe")
 
@@ -258,9 +265,11 @@ class CMRx4DFlowDataSet(Dataset):
             "slice_start": int(slice_start),
             "seg_idx": int(seg_idx),
             "usrate": int(usrate),
+            "usrate_true": (1 / np.mean(mask)).astype("float32"),
             "bins": bins.astype(np.int64),
             "Nt": int(Nt),
             "SPE": int(SPE),
             "PE": int(PE),
             "FE": int(FE),
+            "VENC": np.array(params["VENC"]),
         }
