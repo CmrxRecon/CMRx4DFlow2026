@@ -7,7 +7,6 @@
 [Website](https://cmrxrecon.github.io/2026) |
 [Dataset](https://www.synapse.org/Synapse:syn64545434) |
 [Publications](#publication-references)
-
 ![IntroImage](https://github.com/CmrxRecon/CMRx4DFlow2026/blob/main/Intro2026.gif)
 
 ### Background

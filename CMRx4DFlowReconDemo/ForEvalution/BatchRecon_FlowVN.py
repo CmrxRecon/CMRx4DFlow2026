@@ -1,35 +1,45 @@
 import os
-import glob
-import sys
 import argparse
 import subprocess
-from tqdm import tqdm
 
-if __name__ == "__main__":
+
+def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--path_recon", type=str, required=True)
-    parser.add_argument("--path_save", type=str, required=True)
 
-    # FlowVN
-    parser.add_argument("--flowvn_main", type=str, default="../FlowVN/main.py")
-    parser.add_argument("--ckpt_path", type=str, default="../FlowVN/weights/12-epoch=0.ckpt")
+    parser.add_argument("--flowvn_main", type=str, default="main.py")
 
-    # Rs
-    parser.add_argument("--Rs", type=int, nargs="+", default=[10, 20, 30, 40, 50])
+    parser.add_argument("--test_roots", type=str, required=True,
+                        help="e.g. /mnt/.../ChallengeData/TaskS2/")
+    parser.add_argument("--in_base_dir", type=str, required=True,
+                        help="e.g. /mnt/.../ChallengeData/TaskS2/")
+    parser.add_argument("--out_base_dir", type=str, required=True,
+                        help="e.g. /mnt/.../ChallengeData_FlowVN/TaskS2")
 
-    # FlowVN args (match your single-case test command)
+    parser.add_argument("--ckpt_path", type=str, required=True)
+
+    parser.add_argument("--mode", type=str, default="test")
+    parser.add_argument("--loss", type=str, default="supervised")
     parser.add_argument("--network", type=str, default="FlowVN")
+
     parser.add_argument("--features_in", type=int, default=1)
-    parser.add_argument("--T_size", type=int, default=5)
+    parser.add_argument("--D_size", type=int, default=5)
+    parser.add_argument("--T_size", type=int, default=15)
+    parser.add_argument("--num_act_weights", type=int, default=71)
     parser.add_argument("--features_out", type=int, default=8)
     parser.add_argument("--kernel_size", type=int, default=5)
     parser.add_argument("--num_stages", type=int, default=10)
-    parser.add_argument("--loss", type=str, default="supervised")
 
-    # Optional: GPU selection if FlowVN respects CUDA_VISIBLE_DEVICES
+    parser.add_argument("--epoch", type=int, default=50)
+    parser.add_argument("--lr", type=float, default=1e-4)
+    parser.add_argument("--batch_size", type=int, default=1)
+    parser.add_argument("--act", type=str, default="linear_flowvn")
+
+    parser.add_argument("--devices", type=str, default="0")
+
+    parser.add_argument("--usrate", type=int, nargs="+", default=[10, 20, 30, 40, 50])
+
     parser.add_argument("--cuda_visible_devices", type=str, default=None)
 
-    # Optional: pass-through extra args to FlowVN
     parser.add_argument("--extra", type=str, nargs="*", default=[])
 
     args = parser.parse_args()
@@ -38,70 +48,36 @@ if __name__ == "__main__":
     if args.cuda_visible_devices is not None:
         env["CUDA_VISIBLE_DEVICES"] = args.cuda_visible_devices
 
-    groups_by_R = {}
-    total = 0
+    cmd = [
+        "python", "-u", args.flowvn_main,
+        "--mode", args.mode,
+        "--loss", args.loss,
+        "--network", args.network,
+        "--features_in", str(args.features_in),
+        "--D_size", str(args.D_size),
+        "--T_size", str(args.T_size),
+        "--num_act_weights", str(args.num_act_weights),
+        "--features_out", str(args.features_out),
+        "--kernel_size", str(args.kernel_size),
+        "--num_stages", str(args.num_stages),
+        "--epoch", str(args.epoch),
+        "--lr", str(args.lr),
+        "--batch_size", str(args.batch_size),
+        "--act", args.act,
+        "--devices", str(args.devices),
+        "--test_roots", args.test_roots,
+        "--in_base_dir", args.in_base_dir,
+        "--out_base_dir", args.out_base_dir,
+        "--usrate", *[str(r) for r in args.usrate],
+        "--ckpt_path", args.ckpt_path,
+    ]
 
-    for R in args.Rs:
-        pattern = os.path.join(args.path_recon, "**", f"kdata_ktGaussian{R}.mat")
-        kdata_files = glob.glob(pattern, recursive=True)
+    if args.extra:
+        cmd += args.extra
 
-        case_dirs = []
-        for kf in kdata_files:
-            case_dir = os.path.dirname(kf)
-            need = [
-                os.path.join(case_dir, f"kdata_ktGaussian{R}.mat"),
-                os.path.join(case_dir, f"usmask_ktGaussian{R}.mat"),
-                os.path.join(case_dir, "segmask.mat"),
-                os.path.join(case_dir, "coilmap.mat"),
-                os.path.join(case_dir, "params.csv"),
-            ]
-            if all(os.path.exists(p) for p in need):
-                case_dirs.append(case_dir)
+    print("Running command:\n", " ".join(cmd))
+    subprocess.run(cmd, check=True, env=env)
 
-        case_dirs = sorted(set(case_dirs))
-        groups_by_R[R] = case_dirs
-        total += len(case_dirs)
-        print(f"[R={R}] found {len(case_dirs)} cases")
 
-    print(f"Total cases across Rs={args.Rs}: {total}")
-
-    for R in args.Rs:
-        case_dirs = groups_by_R.get(R, [])
-        if not case_dirs:
-            continue
-
-        pbar = tqdm(case_dirs, desc=f"FlowVN testing R={R}", unit="case", dynamic_ncols=True)
-        for case_dir in pbar:
-            try:
-                rel = os.path.relpath(case_dir, args.path_recon)
-                save_dir = os.path.join(args.path_save, rel)
-                os.makedirs(save_dir, exist_ok=True)
-
-                cmd = [
-                    "python", args.flowvn_main,
-                    "--mode", "test",
-                    "--ckpt_path", args.ckpt_path,
-                    "--input", case_dir,
-                    "--network", args.network,
-                    "--features_in", str(args.features_in),
-                    "--T_size", str(args.T_size),
-                    "--features_out", str(args.features_out),
-                    "--kernel_size", str(args.kernel_size),
-                    "--num_stages", str(args.num_stages),
-                    "--loss", args.loss,
-                    "--save_dir", save_dir,
-                    "--usrate", str(R),
-                ]
-                if args.extra:
-                    cmd += args.extra
-
-                subprocess.run(cmd, check=True, env=env)
-
-                pbar.set_postfix_str(os.path.basename(case_dir) + " -> " + os.path.basename(save_dir))
-
-            except subprocess.CalledProcessError as e:
-                pbar.write(f"[ERROR][R={R}] {case_dir}: FlowVN failed: {e}")
-                continue
-            except Exception as e:
-                pbar.write(f"[ERROR][R={R}] {case_dir}: {repr(e)}")
-                continue
+if __name__ == "__main__":
+    main()

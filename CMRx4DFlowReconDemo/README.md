@@ -87,11 +87,11 @@ Batch reconstruction using CS (TV/LLR).
 ### Example
 ``` bash
 python BatchRecon_CS.py \
-  --path_recon "/mnt/nas/nas3/openData/rawdata/4dFlow/ChallengeData/TaskR1&R2/ValidationSet/Aorta/Center012/Philips_15T_Ambition" \
-  --path_save  "/mnt/nas/nas3/openData/rawdata/4dFlow/ChallengeData_CS/TaskR1&R2/ValidationSet/Aorta/Center012/Philips_15T_Ambition" \
-  --device cuda:0 \
-  --Rs 10 20 \
-  --lamb_llr 10=0.5 20=1.0
+  --path_recon "/mnt/nas/nas3/openData/rawdata/4dFlow/ChallengeData/TaskR1&R2/ValidationSet/" \
+  --path_save  "/mnt/nas/nas3/openData/rawdata/4dFlow/ChallengeData_CS/TaskR1&R2/ValidationSet/" \
+  --device cuda:3 \
+  --Rs 10 20 30 40 50\
+  --lamb_llr 10=0.5 20=1.0 30=1.0 40=0.05 50=0.01
 ```
 
 ## BatchRecon_FlowVN.py
@@ -113,13 +113,13 @@ Saved under:
 ### Example
 ``` bash
 python BatchRecon_FlowVN.py \
-  --path_recon "/mnt/nas/nas3/openData/rawdata/4dFlow/ChallengeData/TaskR1&R2/ValidationSet/Aorta/Center012/Philips_15T_Ambition" \
-  --path_save  "/mnt/nas/nas3/openData/rawdata/4dFlow/ChallengeData_FlowVN/TaskR1&R2/ValidationSet/Aorta/Center012/Philips_15T_Ambition" \
-  --cuda_visible_devices 0 \
-  --Rs 10 20 \
-  --ckpt_path "../FlowVN/weights/12-epoch=0.ckpt" \
-  --network FlowVN --features_in 1 --T_size 5 --features_out 8 \
-  --kernel_size 5 --num_stages 10 --loss supervised
+  --flowvn_main ../FlowVN/main.py \
+  --test_roots '/mnt/nas/nas3/openData/rawdata/4dFlow/ChallengeData/TaskR1&R2/ValidationSet/' \
+  --in_base_dir '/mnt/nas/nas3/openData/rawdata/4dFlow/ChallengeData/TaskR1&R2/ValidationSet/' \
+  --out_base_dir '/mnt/nas/nas3/openData/rawdata/4dFlow/ChallengeData_FlowVN/TaskR1&R2/ValidationSet/' \
+  --ckpt_path ../FlowVN/weights/3-epochepoch=015.ckpt \
+  --usrate 10 20 30 40 50
+  --device 1
 ```
 
 ## BatchEval.py

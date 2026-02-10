@@ -12,41 +12,31 @@ from torch import nn
 from utils.misc_utils import *
 
 
-class FlowVN(nn.Module):
-    def __init__(self, **kwargs):
-        super(FlowVN, self).__init__()
-        options = kwargs
-        self.options = options
-        self.nc = options["num_stages"]
-        self.exp_loss = options["exp_loss"]
+def zero_mean_norm_ball(x, zero_mean=True, normalize=True, norm_bound=1.0, mask=None, axis=(0, ...)):
+    """https://github.com/VLOGroup/mri-variationalnetwork/blob/master/vn/proxmaps.py"""
+    if mask is None:
+        shape = []
+        for i in range(len(x.shape)):
+            if i in axis:
+                shape.append(x.shape[i])
+            else:
+                shape.append(1)
+        mask = torch.ones(shape, dtype=torch.float32, device=x.device)
 
-        cells = []
-        for i in range(self.nc):
-            cells.append(VnMriReconCell(block_id=i, **options))
+    x_masked = x * mask
 
-        self.cell_list = nn.ModuleList(cells)
-        self.input_norm = False
-        self.norm_eps = float(options.get("norm_eps", 1e-6))
+    if zero_mean:
+        x_mean = torch.mean(x_masked, dim=axis, keepdim=True)
+        x_zm = x_masked - x_mean
+    else:
+        x_zm = x_masked
 
-    def forward(self, x, f, c, usrate):
-        x = torch.view_as_real(x)
+    if normalize:
+        magnitude = torch.sqrt(torch.sum(torch.square(x_zm), dim=axis, keepdim=True))
+        x_proj = x_zm / magnitude * norm_bound
+        return x_proj
 
-        S_prev = None
-        if self.exp_loss and self.options["mode"] == "train":
-            x_layers = []
-
-        for i in range(self.nc):
-            block = self.cell_list[i]
-            x, S_prev = block(x, f, c, usrate, S_prev)
-
-            if self.exp_loss and self.options["mode"] == "train":
-                x_layers.append(x)
-
-        if self.exp_loss and self.options["mode"] == "train":
-            x_layers = torch.stack(x_layers, dim=0)
-            return torch.view_as_complex(x_layers)
-
-        return torch.view_as_complex(x)
+    return x_zm
 
 
 class RBFActivationFunction(torch.autograd.Function):
@@ -172,33 +162,6 @@ class LinearActivation(torch.nn.Module):
         )
 
 
-def zero_mean_norm_ball(x, zero_mean=True, normalize=True, norm_bound=1.0, mask=None, axis=(0, ...)):
-    """https://github.com/VLOGroup/mri-variationalnetwork/blob/master/vn/proxmaps.py"""
-    if mask is None:
-        shape = []
-        for i in range(len(x.shape)):
-            if i in axis:
-                shape.append(x.shape[i])
-            else:
-                shape.append(1)
-        mask = torch.ones(shape, dtype=torch.float32, device=x.device)
-
-    x_masked = x * mask
-
-    if zero_mean:
-        x_mean = torch.mean(x_masked, dim=axis, keepdim=True)
-        x_zm = x_masked - x_mean
-    else:
-        x_zm = x_masked
-
-    if normalize:
-        magnitude = torch.sqrt(torch.sum(torch.square(x_zm), dim=axis, keepdim=True))
-        x_proj = x_zm / magnitude * norm_bound
-        return x_proj
-
-    return x_zm
-
-
 class AdaptiveInterpolatorTorchTF(nn.Module):
     def __init__(
         self,
@@ -267,7 +230,8 @@ class AdaptiveInterpolatorTorchTF(nn.Module):
         k = xS - xF
         idx_f = xF.to(torch.long)
         idx_c = idx_f + 1
-
+        idx_f = idx_f.clamp(0, self.n_interp_knots - 2)
+        idx_c = idx_f + 1
         if self.lowmem:
             y_all = []
             for i in range(self.n_flt):
@@ -417,7 +381,8 @@ class USRateModulation(nn.Module):
 
         idx_f = xF.to(torch.long)
         idx_c = idx_f + 1
-
+        idx_f = idx_f.clamp(0, self.n_interp_knots - 2)
+        idx_c = idx_f + 1
         yf = self.yK.gather(0, idx_f)
         yc = self.yK.gather(0, idx_c)
         y = yf * (1 - k) + yc * k
@@ -671,3 +636,40 @@ class VnMriReconCell(nn.Module):
 
         u_next = u_t_1 - S
         return u_next, S
+
+
+class FlowVN(nn.Module):
+    def __init__(self, **kwargs):
+        super(FlowVN, self).__init__()
+        options = kwargs
+        self.options = options
+        self.nc = options["num_stages"]
+        self.exp_loss = options["exp_loss"]
+
+        cells = []
+        for i in range(self.nc):
+            cells.append(VnMriReconCell(block_id=i, **options))
+
+        self.cell_list = nn.ModuleList(cells)
+        self.input_norm = False
+        self.norm_eps = float(options.get("norm_eps", 1e-6))
+
+    def forward(self, x, f, c, usrate):
+        x = torch.view_as_real(x)
+
+        S_prev = None
+        if self.exp_loss and self.options["mode"] == "train":
+            x_layers = []
+
+        for i in range(self.nc):
+            block = self.cell_list[i]
+            x, S_prev = block(x, f, c, usrate, S_prev)
+
+            if self.exp_loss and self.options["mode"] == "train":
+                x_layers.append(x)
+
+        if self.exp_loss and self.options["mode"] == "train":
+            x_layers = torch.stack(x_layers, dim=0)
+            return torch.view_as_complex(x_layers)
+
+        return torch.view_as_complex(x)

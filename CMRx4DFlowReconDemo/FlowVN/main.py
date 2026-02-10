@@ -19,7 +19,6 @@ from pytorch_lightning.loggers import TensorBoardLogger
 from tqdm import tqdm
 
 from utils.misc_utils import *
-from utils.groupsampler import *
 from utils.dataloader_CMRx4DFlow import CMRx4DFlowDataSet
 
 sys.path.append("../")
@@ -106,19 +105,50 @@ class ParamGradTensorBoardCallback(pl.Callback):
 
 
 class CMRSaveCallback(pl.Callback):
-    def __init__(self, save_dir):
-        self.save_dir = Path(save_dir)
-        self.save_dir.mkdir(parents=True, exist_ok=True)
+    def __init__(self):
         self._cache = {}
 
     def _key(self, meta: dict):
-        subj = meta.get("subj", "unknown")
+        out_dir = str(meta.get("out_dir", ""))
+        case_dir = str(meta.get("case_dir", ""))
         R = int(meta.get("usrate", 0))
-        return (subj, R)
+        base = out_dir if out_dir not in ("", "None") else case_dir
+        return (base, R)
+
+    def _flush_one(self, base_out: str, R: int):
+        expected_segs = [0, 1, 2, 3]
+        pack = self._cache.get((base_out, R), None)
+        if pack is None:
+            return
+
+        recon_map = pack["recon"]
+        seg_map = pack["seg"]
+        missing = [i for i in expected_segs if i not in recon_map]
+        if missing:
+            return
+
+        img = np.stack([recon_map[i] for i in expected_segs], axis=0)
+        img = np.transpose(img, (0, 1, 4, 3, 2))
+
+        s = seg_map[0]
+        s = np.transpose(s, (2, 1, 0))
+        s = s[None, None, :, :, :]
+
+        out_dir = Path(base_out)
+        out_dir.mkdir(parents=True, exist_ok=True)
+        print("SAVE", out_dir)
+        save_coo_npz(str(out_dir / f"img_ktGaussian{R}.npz"), img * s)
+
+        csv_path = out_dir / f"recontime_ktGaussian{R}.csv"
+        with open(csv_path, "w", newline="") as f:
+            w = csv.writer(f)
+            w.writerow(["recontime"])
+            w.writerow([pack["recon_ms_sum"] / 1000.0])
+
+        del self._cache[(base_out, R)]
 
     def on_test_batch_end(self, trainer, pl_module, outputs, batch, batch_idx, dataloader_idx=0):
         meta = {k: outputs.get(k) for k in outputs.keys() if k != "recon"}
-
         seg_idx = int(meta.get("seg_idx", 0))
         recon_ms = meta.get("recon_ms", 0.0)
 
@@ -130,49 +160,23 @@ class CMRSaveCallback(pl.Callback):
             self._cache[k]["recon_ms_sum"] += float(recon_ms)
 
         recon = outputs["recon"].detach().cpu()
-        x = recon
-        if x.ndim == 5:
-            x = x[0]
-        if x.ndim != 4:
-            raise RuntimeError(f"Unexpected recon shape {tuple(recon.shape)} -> {tuple(x.shape)}")
+        x = recon[0] if recon.ndim == 5 else recon
         x_np = x.numpy()
 
         seg = batch["segmentation"]
         if hasattr(seg, "detach"):
             seg = seg.detach().cpu().numpy()
         seg = seg.astype(bool)[0]
-        if seg.ndim != 3:
-            raise RuntimeError(f"Unexpected segmentation shape {tuple(seg.shape)} (expected (fe,pe,spe))")
 
         self._cache[k]["recon"][seg_idx] = x_np
         self._cache[k]["seg"][seg_idx] = seg
-        self._cache[k]["meta"] = meta
+
+        base_out, R = k
+        self._flush_one(base_out, R)
 
     def on_test_epoch_end(self, trainer, pl_module):
-        for (subj, R), pack in self._cache.items():
-            recon_map = pack["recon"]
-            seg_map = pack["seg"]
-            if len(recon_map) == 0:
-                continue
-
-            seg_ids = sorted(recon_map.keys())
-
-            img = np.stack([recon_map[i] for i in seg_ids], axis=0)
-            img = np.transpose(img, (0, 1, 4, 3, 2))
-
-            pick = seg_ids[0]
-            s = seg_map[pick]
-            s = np.transpose(s, (2, 1, 0))
-            s = s[None, None, :, :, :]
-
-            save_coo_npz(str(self.save_dir / f"img_ktGaussian{R}.npz"), img * s)
-
-            csv_path = self.save_dir / f"recontime_ktGaussian{R}.csv"
-            with open(csv_path, "w", newline="") as f:
-                w = csv.writer(f)
-                w.writerow(["recontime"])
-                w.writerow([pack["recon_ms_sum"] / 1000.0])
-
+        for (base_out, R) in list(self._cache.keys()):
+            self._flush_one(base_out, R)
         self._cache.clear()
 
 
@@ -273,7 +277,7 @@ class UnrolledNetwork(pl.LightningModule):
             loss_mask = abs(kdata_p2[:, :, 0, :, 0, :, :]) != 0
 
             recon_img_p1 = self.network(
-                Variable(batch["imdata_p1"], requires_grad=True),
+                (batch["imdata_p1"]),
                 batch["kdata_p1"],
                 batch["coil_sens"],
                 batch["usrate_true"],
@@ -354,6 +358,9 @@ class UnrolledNetwork(pl.LightningModule):
 
         return {"loss": loss}
 
+    def on_validation_epoch_start(self):
+        self._vis_done_per_R = {}
+
     @torch.no_grad()
     def validation_step(self, batch, batch_idx):
         usrate = int(batch["usrate"][0]) if hasattr(batch["usrate"], "__len__") else int(batch["usrate"])
@@ -398,9 +405,6 @@ class UnrolledNetwork(pl.LightningModule):
 
         return {"val_loss": loss, "usrate": usrate}
 
-    def on_validation_epoch_start(self):
-        self._vis_done_per_R = {}
-
     @torch.inference_mode()
     def test_step(self, batch, batch_idx):
         recon_ms = None
@@ -441,9 +445,14 @@ class UnrolledNetwork(pl.LightningModule):
         seg_idx = int(batch["seg_idx"][0]) if hasattr(batch["seg_idx"], "__len__") else int(batch["seg_idx"])
         subj = batch["subj"][0] if isinstance(batch["subj"], (list, tuple)) else batch["subj"]
 
+        case_dir = batch["case_dir"][0] if isinstance(batch["case_dir"], (list, tuple)) else batch["case_dir"]
+        out_dir = batch["out_dir"][0] if isinstance(batch["out_dir"], (list, tuple)) else batch["out_dir"]
+
         return {
             "recon": recon_img_complex,
             "subj": subj,
+            "case_dir": case_dir,
+            "out_dir": out_dir,
             "seg_idx": seg_idx,
             "usrate": usrate,
             "recon_ms": recon_ms,
@@ -461,7 +470,7 @@ class UnrolledNetwork(pl.LightningModule):
         }
 
 
-if __name__ == "__main__":
+def _build_arg_parser():
     parser = argparse.ArgumentParser(description="Network arguments")
 
     parser.add_argument("--D_size", type=int, default=1, help="number of slices per volume (FlowVN only)")
@@ -492,7 +501,13 @@ if __name__ == "__main__":
     parser.add_argument("--epoch", type=int, default=100, help="number of training epoch")
     parser.add_argument("--batch_size", type=int, default=1, help="batch size")
     parser.add_argument("--loss", type=str, default="", help="type of loss (ssdu or supervised)")
-    parser.add_argument("--usrate", type=int, default=None, help="test only: ktGaussian undersampling rate")
+    parser.add_argument(
+        "--usrate",
+        type=int,
+        nargs="+",
+        default=None,
+        help="test only: one or more ktGaussian undersampling rates, e.g. --usrate 10 20 30",
+    )
     parser.add_argument(
         "--devices",
         type=int,
@@ -500,21 +515,45 @@ if __name__ == "__main__":
         default=[0],
         help="GPU device ids, e.g. --devices 0 or --devices 0 1 2 3",
     )
+    parser.add_argument(
+        "--test_roots",
+        type=str,
+        nargs="*",
+        default=None,
+        help="test mode: one or more roots to scan for cases (recursive)",
+    )
+    parser.add_argument(
+        "--in_base_dir",
+        type=str,
+        default=None,
+        help="base input dir used to compute relative path, e.g. .../ChallengeData/TaskR1&R2",
+    )
+    parser.add_argument(
+        "--out_base_dir",
+        type=str,
+        default=None,
+        help="base output dir used to mirror directory structure, e.g. .../ChallengeData_FlowVN/TaskR1&R2",
+    )
 
-    args = parser.parse_args()
-    print_options(parser, args)
-    args = vars(args)
+    return parser
 
+
+def _train(args: dict, parser: argparse.ArgumentParser):
     torch.backends.cudnn.benchmark = True
     torch.use_deterministic_algorithms = True
 
     save_dir = Path(args["save_dir"])
     save_dir.mkdir(parents=True, exist_ok=True)
-    logger = TensorBoardLogger("./results/lightning_logs", name="") if args["mode"] == "train" else None
+    logger = TensorBoardLogger("./results/lightning_logs", name="")
 
     n_run = str(max((int(p.split("_")[-1]) for p in glob("./results/lightning_logs/*")), default=0) + 1)
     checkpoint_callback = pl.callbacks.ModelCheckpoint(
-        save_top_k=1, save_weights_only=True, dirpath=save_dir, filename=n_run + "-{epoch}"
+        dirpath=save_dir,
+        filename=n_run + "-epoch{epoch:03d}",
+        save_top_k=-1,
+        every_n_epochs=1,
+        save_last=False,
+        save_weights_only=True,
     )
 
     paramgrad_cb = ParamGradTensorBoardCallback(
@@ -524,59 +563,95 @@ if __name__ == "__main__":
         max_params=None,
     )
 
+    dataset = CMRx4DFlowDataSet(**args)
+    dataloader = DataLoader(dataset, batch_size=1, num_workers=4, pin_memory=True, shuffle=True)
+
+    args_val = vars(parser.parse_args())
+    args_val["mode"] = "val"
+    val_dataset = CMRx4DFlowDataSet(**args_val)
+    val_dataloader = DataLoader(val_dataset, batch_size=1, num_workers=4, pin_memory=True, shuffle=False)
+
+    trainer = pl.Trainer(
+        accelerator="gpu",
+        devices=args["devices"],
+        strategy="ddp_find_unused_parameters_true" if len(args["devices"]) > 1 else "auto",
+        max_epochs=args["epoch"],
+        logger=logger,
+        gradient_clip_val=1.0,
+        num_sanity_val_steps=0,
+        callbacks=[checkpoint_callback, paramgrad_cb],
+        check_val_every_n_epoch=1,
+    )
+
+    if args["ckpt_path"] is not None:
+        model = UnrolledNetwork.load_from_checkpoint(args["ckpt_path"], **args)
+    else:
+        model = UnrolledNetwork(**args)
+
+    trainer.fit(model, train_dataloaders=dataloader, val_dataloaders=val_dataloader)
+
+
+def _test(args: dict):
+    torch.backends.cudnn.benchmark = True
+    torch.use_deterministic_algorithms = True
+
+    if args.get("usrate", None) is None:
+        raise ValueError("test mode requires --usrate, e.g. --usrate 10 or --usrate 10 20 30")
+
+    if isinstance(args["usrate"], int):
+        args["usrate"] = [int(args["usrate"])]
+    else:
+        args["usrate"] = [int(u) for u in args["usrate"]]
+
+    if args.get("test_roots", None) is not None:
+        args["test_roots"] = args["test_roots"]
+
+    if args.get("out_base_dir", None) in (None, "", "None"):
+        args["out_base_dir"] = args["save_dir"]
+
+    if args.get("in_base_dir", None) in (None, "", "None"):
+        tr = args.get("test_roots", None)
+        if tr and len(tr) > 0:
+            p = Path(tr[0]).resolve()
+            args["in_base_dir"] = str(p.parent) if p.name in ("ValidationSet", "TrainSet") else str(p)
+
+    dataset = CMRx4DFlowDataSet(**args)
+    dataloader = DataLoader(dataset, batch_size=1, num_workers=1, pin_memory=True, shuffle=False)
+    save_callback = CMRSaveCallback()
+
+    trainer = pl.Trainer(
+        accelerator="gpu",
+        devices=args["devices"],
+        logger=False,
+        callbacks=[save_callback],
+    )
+
+    if torch.cuda.is_available():
+        map_location = lambda storage, loc: storage.cuda(0)
+    else:
+        map_location = "cpu"
+
+    model = UnrolledNetwork.load_from_checkpoint(
+        args["ckpt_path"],
+        map_location=map_location,
+        **args,
+    )
+    trainer.test(model, dataloaders=dataloader)
+
+
+def main():
+    parser = _build_arg_parser()
+    args_ns = parser.parse_args()
+    print_options(parser, args_ns)
+    args = vars(args_ns)
+
     if args["mode"] == "train":
-        dataset = CMRx4DFlowDataSet(**args)
-        dataloader = DataLoader(dataset, batch_size=1, num_workers=4, pin_memory=True, shuffle=True)
-
-        args_val = vars(parser.parse_args())
-        args_val["mode"] = "val"
-        val_dataset = CMRx4DFlowDataSet(**args_val)
-        val_dataloader = DataLoader(val_dataset, batch_size=1, num_workers=4, pin_memory=True, shuffle=False)
-
-        trainer = pl.Trainer(
-            accelerator="gpu",
-            devices=args["devices"],
-            strategy="ddp_find_unused_parameters_true" if len(args["devices"]) > 1 else "auto",
-            max_epochs=args["epoch"],
-            logger=logger,
-            gradient_clip_val=1.0,
-            num_sanity_val_steps=0,
-            callbacks=[checkpoint_callback, paramgrad_cb],
-            check_val_every_n_epoch=1,
-        )
-
-        if args["ckpt_path"] is not None:
-            model = UnrolledNetwork.load_from_checkpoint(args["ckpt_path"], **args)
-        else:
-            model = UnrolledNetwork(**args)
-
-        trainer.fit(model, train_dataloaders=dataloader, val_dataloaders=val_dataloader)
-
+        _train(args, parser)
     elif args["mode"] == "test":
-        if args.get("usrate", None) is None:
-            raise ValueError("test mode requires --usrate, e.g. --usrate 10")
+        _test(args)
+    else:
+        raise ValueError("mode must be 'train' or 'test'")
 
-        dataset = CMRx4DFlowDataSet(**args)
-        dataloader = DataLoader(dataset, batch_size=1, num_workers=1, pin_memory=True)
 
-        save_callback = CMRSaveCallback(save_dir=args["save_dir"])
-
-        trainer = pl.Trainer(
-            accelerator="gpu",
-            devices=args["devices"],
-            max_epochs=args["epoch"],
-            logger=False,
-            callbacks=[save_callback],
-        )
-
-        if torch.cuda.is_available():
-            map_location = lambda storage, loc: storage.cuda(0)
-        else:
-            map_location = "cpu"
-
-        model = UnrolledNetwork.load_from_checkpoint(
-            args["ckpt_path"],
-            map_location=map_location,
-            **args,
-        )
-        trainer.test(model, dataloaders=dataloader)
+if __name__ == "__main__":
+    main()

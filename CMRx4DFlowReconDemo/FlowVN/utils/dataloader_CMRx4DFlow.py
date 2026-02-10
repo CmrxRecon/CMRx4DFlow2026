@@ -16,6 +16,7 @@ sys.path.append("../../")
 from CMRx4DFlowMaskGeneration import fun_mask_gen_2d
 from utils.misc_utils import mriAdjointOp
 
+
 REQUIRED_FILES = ("kdata_full.mat", "coilmap.mat", "segmask.mat", "params.csv")
 
 DEFAULT_OPTS = {
@@ -28,6 +29,24 @@ DEFAULT_OPTS = {
         # "/SSDHome/share/4dFlow/ChallengeData/TaskR1&R2/ValidationSet/Aorta/Center012/Philips_30T_Ingenia"
     ],
 }
+
+
+def _compute_out_dir(case_dir, in_base_dir, out_base_dir):
+    """
+    Map input case_dir -> output directory by preserving relative path under in_base_dir.
+    If in_base_dir/out_base_dir is missing, fall back to out_base_dir/case_basename or case_dir.
+    """
+    case_dir = str(case_dir)
+    if out_base_dir is None or str(out_base_dir) == "":
+        return case_dir
+
+    out_base_dir = str(out_base_dir)
+    if in_base_dir is None or str(in_base_dir) == "":
+        return str(Path(out_base_dir) / Path(case_dir).name)
+
+    in_base_dir = str(in_base_dir)
+    rel = os.path.relpath(case_dir, in_base_dir)
+    return str(Path(out_base_dir) / rel)
 
 
 def find_valid_cases(roots, required_files=REQUIRED_FILES, anchor="kdata_full.mat"):
@@ -88,7 +107,8 @@ class CMRx4DFlowDataSet(Dataset):
         self.input = options.get("input", None)
         self.loss = options["loss"]
         self.network = options.get("network", "")
-
+        self.in_base_dir = options.get("in_base_dir", None)
+        self.out_base_dir = options.get("out_base_dir", None)
         mode = options["mode"]
         if mode not in ("train", "val", "test"):
             raise ValueError(f"mode must be one of ['train','val','test'], got {mode}")
@@ -103,16 +123,21 @@ class CMRx4DFlowDataSet(Dataset):
         if mode == "test":
             if self.test_usrate is None:
                 raise ValueError("In test mode you must pass --usrate")
-            self.test_usrate = int(self.test_usrate)
+            if isinstance(self.test_usrate, int):
+                self.test_usrate = [int(self.test_usrate)]
+            else:
+                self.test_usrate = [int(u) for u in self.test_usrate]
 
         self.filename = []
 
-        def add_case(case_dir: str):
+        def add_case(case_dir):
             case_dir = str(case_dir)
+            out_dir = _compute_out_dir(case_dir, self.in_base_dir, self.out_base_dir)
             if mode == "test":
                 Nv = 4
-                for seg_i in range(Nv):
-                    self.filename.append([case_dir, 0, self.test_usrate, int(seg_i)])
+                for u in self.test_usrate:
+                    for seg_i in range(Nv):
+                        self.filename.append([case_dir, 0, int(u), int(seg_i), out_dir])
                 return
 
             kdata = load_mat(str(Path(case_dir) / "kdata_full.mat"), "kdata_full")
@@ -124,18 +149,18 @@ class CMRx4DFlowDataSet(Dataset):
 
             for i in slice_starts:
                 if mode == "train":
-                    self.filename.append([case_dir, int(i), None, None])
+                    self.filename.append([case_dir, int(i), None, None, out_dir])
                 else:
                     Nv = 4
                     for u in self.usrate_list:
                         for seg_i in range(Nv):
-                            self.filename.append([case_dir, int(i), int(u), int(seg_i)])
+                            self.filename.append([case_dir, int(i), int(u), int(seg_i), out_dir])
 
         if self.input is not None and str(self.input) != "":
             case_dir = Path(self.input)
             if not case_dir.exists():
                 raise FileNotFoundError(f"Input path does not exist: {case_dir}")
-            add_case(case_dir)
+            add_case(str(case_dir))
         else:
             roots = options.get(f"{mode}_roots", [])
             subjects = find_valid_cases(roots)
@@ -145,9 +170,9 @@ class CMRx4DFlowDataSet(Dataset):
         if mode != "train":
             self.filename.sort(key=lambda x: (str(x[0]), int(x[2]), int(x[1]), int(x[3])))
 
-    def group_fn_from_filename(dataset, idx: int):
-        case_dir, slice_start, usrate, seg_idx = dataset.filename[idx]
-        return (str(case_dir), int(usrate), int(slice_start))
+    def group_fn_from_filename(dataset, idx):
+        case_dir, slice_start, usrate, seg_idx, out_dir = dataset.filename[idx]
+        return (str(case_dir), str(out_dir), int(usrate), int(slice_start))
 
     def __len__(self):
         return len(self.filename)
@@ -162,7 +187,7 @@ class CMRx4DFlowDataSet(Dataset):
         slice_start = int(self.filename[idx][1])
         stored_usrate = self.filename[idx][2]
         stored_seg_idx = self.filename[idx][3]
-
+        out_dir = str(self.filename[idx][4])
         c = load_mat(str(Path(case_dir) / "coilmap.mat"), "coilmap")
         s = load_mat(str(Path(case_dir) / "segmask.mat"), "segmask")
         params = read_params_csv(str(Path(case_dir) / "params.csv"))
@@ -234,7 +259,7 @@ class CMRx4DFlowDataSet(Dataset):
         elif mode == "val":
             mask = load_usmask_ktGaussian(case_dir, usrate=int(stored_usrate), Nt=Nt, SPE=SPE, PE=PE)
         else:
-            mask = np.ones((1, 1, Nt, 1, PE, SPE), dtype=np.float32)
+            mask = load_usmask_ktGaussian(case_dir, usrate=int(stored_usrate), Nt=Nt, SPE=SPE, PE=PE)
 
         f = rearrange(f, "nv nt nc spe pe fe -> nv nc nt fe pe spe")
         c = rearrange(c, "nc spe pe fe -> nc fe pe spe")
@@ -272,4 +297,5 @@ class CMRx4DFlowDataSet(Dataset):
             "PE": int(PE),
             "FE": int(FE),
             "VENC": np.array(params["VENC"]),
+            "out_dir": out_dir,
         }

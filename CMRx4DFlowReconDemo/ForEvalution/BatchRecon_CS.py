@@ -25,7 +25,7 @@ if __name__ == "__main__":
 
     device_type = torch.device(args.device).type
     is_cuda = device_type == "cuda"
-
+    print(args.path_recon)
     lamb_llr_by_R = {}
     for item in args.lamb_llr:
         if "=" not in item:
@@ -39,7 +39,6 @@ if __name__ == "__main__":
     for R in args.Rs:
         pattern = os.path.join(args.path_recon, "**", f"kdata_ktGaussian{R}.mat")
         kdata_files = glob.glob(pattern, recursive=True)
-
         case_dirs = []
         for kf in kdata_files:
             case_dir = os.path.dirname(kf)

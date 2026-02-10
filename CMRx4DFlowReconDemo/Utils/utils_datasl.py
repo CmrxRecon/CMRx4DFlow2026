@@ -2,7 +2,7 @@ import os
 import h5py
 import numpy as np
 import pandas as pd
-
+import hdf5storage
 
 def read_params_csv(filepath):
     """
@@ -75,48 +75,31 @@ def read_params_csv(filepath):
 
     except Exception as exc:
         raise RuntimeError(f"Failed to read params CSV: {filepath}") from exc
-
-
-def save_mat(save_path, key, data, real_key="real", imag_key="imag"):
+    
+def save_mat(out_path: str, key: str, arr: np.ndarray, overwrite: bool = True):
     """
-    Save an array to a MAT v7.3-style HDF5 file.
+    Save a NumPy array to a MATLAB .mat file (via hdf5storage, typically v7.3/HDF5).
 
-    Data are written using h5py with gzip compression. Complex arrays are stored
-    as a compound dtype with two fields (real_key, imag_key), preserving the
-    original floating dtype of the real/imag parts.
-
-    Parameters
-    ----------
-    save_path : str
-        Output path (typically .mat for v7.3-style files, but any HDF5 path works).
-    key : str
-        Dataset name to create in the HDF5 file.
-    data : array-like
-        Data to write; converted via np.asanyarray.
-    real_key : str, default "real"
-        Field name for real part when storing complex arrays.
-    imag_key : str, default "imag"
-        Field name for imaginary part when storing complex arrays.
-
-    Returns
-    -------
-    None
+    Args:
+        out_path: Output .mat file path.
+        key: Variable name to use inside the .mat file (the name you get in MATLAB).
+        arr: NumPy array (or array-like) to save.
+        overwrite: If True and the file exists, delete it first.
     """
-    with h5py.File(save_path, "w") as f:
-        if key in f:
-            del f[key]
-
-        arr = np.asanyarray(data)
-
-        if np.iscomplexobj(arr):
-            dt = np.dtype([(real_key, arr.real.dtype), (imag_key, arr.imag.dtype)])
-            out = np.empty(arr.shape, dtype=dt)
-            out[real_key] = arr.real
-            out[imag_key] = arr.imag
-            f.create_dataset(key, data=out, compression="gzip", compression_opts=4)
-        else:
-            f.create_dataset(key, data=arr, compression="gzip", compression_opts=4)
-
+    if overwrite and os.path.exists(out_path):
+        os.remove(out_path)
+    arr = np.asarray(arr)
+    # Reverse the axis order, e.g. (H, W, C) -> (C, W, H).
+    # This is sometimes done to match MATLAB/Fortran-style conventions or
+    # to keep consistency with a particular downstream loader.
+    arr = np.transpose(arr, axes=tuple(range(arr.ndim - 1, -1, -1)))
+    arr = np.ascontiguousarray(arr)
+    options = hdf5storage.Options(
+        matlab_compatible=True,      
+        store_python_metadata=False,  
+        compress=True,               
+    )
+    hdf5storage.savemat(out_path, {key: arr}, options=options)
 
 def load_mat(path, key, complex_mode="auto"):
     """
