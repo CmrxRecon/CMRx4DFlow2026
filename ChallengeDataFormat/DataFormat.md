@@ -1,23 +1,26 @@
 ## 0. ChallengeData Directory Structure
 
   ChallengeData
-    ├─ TaskR1&R2
+    ├─ TaskR1R2
     │  ├─ TrainSet
     │  │  └─ Aorta
-    │  │     └─ Center001
-    │  │        └─ UIH_30T_uMR890
-    │  │           └─ P007
+    │  │     └─ Center012
+    │  │        └─ Philips_30T_Ingenia
+    │  │           └─ P005
     │  │              ├─ kdata_full.mat
     │  │              ├─ coilmap.mat
     │  │              ├─ segmask.mat
     │  │              └─ params.csv
     │  └─ ValidationSet
     │     └─ Aorta
-    │        └─ Center002
-    │           └─ Siemens_30T_VIDA
-    │              └─ P007
+    │        └─ Center012
+    │           └─ Philips_30T_Ingenia
+    │              └─ P006
     │                 ├─ kdata_ktGaussian10.mat
     │                 ├─ usmask_ktGaussian10.mat
+                        .
+                        .
+                        .
     │                 ├─ coilmap.mat
     │                 ├─ segmask.mat
     │                 └─ params.csv

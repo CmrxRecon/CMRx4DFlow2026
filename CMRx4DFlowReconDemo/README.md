@@ -1,6 +1,10 @@
 
 ## Repository Structure
 
+> **Demo data note**  
+> The demo data can be found on the Synapse dataset page:  
+> https://www.synapse.org/Synapse:syn64545434
+
 The demos are split into two folders:
 
 - **`./ForRecon/`** — everything a participant needs to:
@@ -87,8 +91,8 @@ Batch reconstruction using CS (TV/LLR).
 ### Example
 ``` bash
 python BatchRecon_CS.py \
-  --path_recon "/mnt/nas/nas3/openData/rawdata/4dFlow/ChallengeData/TaskR1&R2/ValidationSet/" \
-  --path_save  "/mnt/nas/nas3/openData/rawdata/4dFlow/ChallengeData_CS/TaskR1&R2/ValidationSet/" \
+  --path_recon "/mnt/nas/nas3/openData/rawdata/4dFlow/ChallengeData/TaskR1R2/ValidationSet/" \
+  --path_save  "/mnt/nas/nas3/openData/rawdata/4dFlow/ChallengeData_CS/TaskR1R2/ValidationSet/" \
   --device cuda:3 \
   --Rs 10 20 30 40 50\
   --lamb_llr 10=0.5 20=1.0 30=1.0 40=0.05 50=0.01
@@ -114,9 +118,9 @@ Saved under:
 ``` bash
 python BatchRecon_FlowVN.py \
   --flowvn_main ../FlowVN/main.py \
-  --test_roots '/mnt/nas/nas3/openData/rawdata/4dFlow/ChallengeData/TaskR1&R2/ValidationSet/' \
-  --in_base_dir '/mnt/nas/nas3/openData/rawdata/4dFlow/ChallengeData/TaskR1&R2/ValidationSet/' \
-  --out_base_dir '/mnt/nas/nas3/openData/rawdata/4dFlow/ChallengeData_FlowVN/TaskR1&R2/ValidationSet/' \
+  --test_roots '/mnt/nas/nas3/openData/rawdata/4dFlow/ChallengeData/TaskR1R2/ValidationSet/' \
+  --in_base_dir '/mnt/nas/nas3/openData/rawdata/4dFlow/ChallengeData/TaskR1R2/ValidationSet/' \
+  --out_base_dir '/mnt/nas/nas3/openData/rawdata/4dFlow/ChallengeData_FlowVN/TaskR1R2/ValidationSet/' \
   --ckpt_path ../FlowVN/weights/3-epochepoch=015.ckpt \
   --usrate 10 20 30 40 50
   --device 1
@@ -145,8 +149,8 @@ Batch evaluation for recon results (phase correction + metrics).
 ### Example
 ```bash
 python BatchEval.py \
-  --path_recon "/mnt/nas/nas3/openData/rawdata/4dFlow/ChallengeData_FlowVN/TaskR1&R2" \
-  --path_gt   "/mnt/nas/nas3/openData/rawdata/4dFlow/ChallengeData_GT/TaskR1&R2" \
-  --out_csv   "/mnt/nas/nas3/openData/rawdata/4dFlow/ChallengeData_FlowVN/TaskR1&R2/results.csv"
+  --path_recon "/mnt/nas/nas3/openData/rawdata/4dFlow/ChallengeData_FlowVN/TaskR1R2" \
+  --path_gt   "/mnt/nas/nas3/openData/rawdata/4dFlow/ChallengeData_GT/TaskR1R2" \
+  --out_csv   "/mnt/nas/nas3/openData/rawdata/4dFlow/ChallengeData_FlowVN/TaskR1R2/results.csv"
 ```
 ---
