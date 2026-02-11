@@ -3,7 +3,7 @@
 
 > **Demo data note**  
 > The demo data can be found on the Synapse dataset page:  
-> https://www.synapse.org/Synapse:syn64545434
+> https://www.synapse.org/Synapse:syn64545434/wiki/638361
 
 The demos are split into two folders:
 

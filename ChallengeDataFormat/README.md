@@ -83,4 +83,4 @@ Reconstructed image generated **inside `segmask`** (from undersampled k-space wi
 **Storage format (sparse in `.npz`)**  
 The image is saved in NPZ using a sparse representation to reduce file size. For a complete, working example (including detailed function call instructions), please refer to:
 
-- [`CMRx4DFlowReconDemo.ForRecon.3_DataSavingDemo`](https://https://github.com/CmrxRecon/CMRx4DFlow2026/tree/main/CMRx4DFlowReconDemo/ForRecon/3_DataSavingDemo)
+- [`CMRx4DFlowReconDemo.ForRecon.3_DataSavingDemo`](https://github.com/CmrxRecon/CMRx4DFlow2026/blob/main/CMRx4DFlowReconDemo/ForRecon/3_DataSavingDemo.ipynb)
