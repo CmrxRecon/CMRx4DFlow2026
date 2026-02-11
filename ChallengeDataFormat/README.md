@@ -1,30 +1,28 @@
 ## 0. ChallengeData Directory Structure
-
-  ChallengeData
-    ├─ TaskR1R2
-    │  ├─ TrainSet
-    │  │  └─ Aorta
-    │  │     └─ Center012
-    │  │        └─ Philips_30T_Ingenia
-    │  │           └─ P005
-    │  │              ├─ kdata_full.mat
-    │  │              ├─ coilmap.mat
-    │  │              ├─ segmask.mat
-    │  │              └─ params.csv
-    │  └─ ValidationSet
-    │     └─ Aorta
-    │        └─ Center012
-    │           └─ Philips_30T_Ingenia
-    │              └─ P006
-    │                 ├─ kdata_ktGaussian10.mat
-    │                 ├─ usmask_ktGaussian10.mat
-                        .
-                        .
-                        .
-    │                 ├─ coilmap.mat
-    │                 ├─ segmask.mat
-    │                 └─ params.csv
-
+```
+ChallengeData/
+├─ TaskR1R2/
+│  ├─ TrainSet/
+│  │  └─ Aorta/
+│  │     └─ Center012/
+│  │        └─ Philips_30T_Ingenia/
+│  │           └─ P005/
+│  │              ├─ kdata_full.mat
+│  │              ├─ coilmap.mat
+│  │              ├─ segmask.mat
+│  │              └─ params.csv
+│  └─ ValidationSet/
+│     └─ Aorta/
+│        └─ Center012/
+│           └─ Philips_30T_Ingenia/
+│              └─ P006/
+│                 ├─ kdata_ktGaussian10.mat
+│                 ├─ usmask_ktGaussian10.mat
+│                 ├─ ...
+│                 ├─ coilmap.mat
+│                 ├─ segmask.mat
+│                 └─ params.csv
+```
 ## 1. Data Description
 
 **Dimension definitions:**
@@ -76,3 +74,13 @@ Undersampling mask with acceleration factor **R**.
 Undersampled k-space data with acceleration factor **R**.
 - **Key**: `kdata_ktGaussian`
 - **Shape**: `(Nv, Nt, Nc, SPE, PE, FE)`
+
+#### `img_ktGaussian{R}.npz`
+Reconstructed image generated **inside `segmask`** (from undersampled k-space with acceleration factor **R**). Stored as a **sparse NPZ**.
+- **Key**: `img_ktGaussian`
+- **Shape**: `(Nv, Nt, SPE, PE, FE)`
+
+**Storage format (sparse in `.npz`)**  
+The image is saved in NPZ using a sparse representation to reduce file size. For a complete, working example (including detailed function call instructions), please refer to:
+
+- [`CMRx4DFlowReconDemo.ForRecon.3_DataSavingDemo`](https://https://github.com/CmrxRecon/CMRx4DFlow2026/tree/main/CMRx4DFlowReconDemo/ForRecon/3_DataSavingDemo)

@@ -215,7 +215,7 @@ def save_coo_npz(path, arr):
     """
     os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
 
-    arr = np.asarray(arr)
+    arr = np.asarray(arr).astype('complex64')
     coords = np.argwhere(arr != 0).astype(np.int32)
     data = arr[tuple(coords.T)] if coords.size else arr.reshape(-1)[:0]
 
