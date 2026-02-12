@@ -16,9 +16,8 @@ ChallengeData/
 │        └─ Center012/
 │           └─ Philips_30T_Ingenia/
 │              └─ P006/
-│                 ├─ kdata_ktGaussian10.mat
-│                 ├─ usmask_ktGaussian10.mat
-│                 ├─ ...
+│                 ├─ kdata_ktGaussian20.mat
+│                 ├─ usmask_ktGaussian20.mat
 │                 ├─ coilmap.mat
 │                 ├─ segmask.mat
 │                 └─ params.csv
