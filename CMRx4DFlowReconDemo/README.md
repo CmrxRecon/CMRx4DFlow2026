@@ -123,7 +123,7 @@ python BatchRecon_FlowVN.py \
   --out_base_dir '/mnt/nas/nas3/openData/rawdata/4dFlow/ChallengeData_FlowVN/TaskR1R2/ValidationSet/' \
   --ckpt_path ../FlowVN/weights/3-epochepoch=015.ckpt \
   --usrate 10 20 30 40 50
-  --device 1
+  --devices 1
 ```
 
 ## BatchEval.py
