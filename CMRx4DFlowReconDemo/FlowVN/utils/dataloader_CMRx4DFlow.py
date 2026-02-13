@@ -136,6 +136,10 @@ class CMRx4DFlowDataSet(Dataset):
             if mode == "test":
                 Nv = 4
                 for u in self.test_usrate:
+                    mask_ok = (Path(case_dir) / f"usmask_ktGaussian{int(u)}.mat").is_file()
+                    k_ok = (Path(case_dir) / f"kdata_ktGaussian{int(u)}.mat").is_file()
+                    if not (mask_ok and k_ok):
+                        continue
                     for seg_i in range(Nv):
                         self.filename.append([case_dir, 0, int(u), int(seg_i), out_dir])
                 return
@@ -277,7 +281,6 @@ class CMRx4DFlowDataSet(Dataset):
         imdata_p1 /= norm
         im /= norm
         f /= norm
-
         return {
             "imdata_p1": imdata_p1,
             "gt": im,

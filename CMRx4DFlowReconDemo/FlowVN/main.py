@@ -25,7 +25,7 @@ sys.path.append("../")
 from Utils.utils_datasl import save_coo_npz
 from Utils.utils_metrics import nRMSE, SSIM, RelErr, AngErr
 from Utils.utils_flow import complex2magflow
-
+from networks.flowvn_mp import FlowVNModelParallel
 from networks.flowvn import FlowVN
 
 
@@ -187,7 +187,12 @@ class UnrolledNetwork(pl.LightningModule):
         self.log_img_count = 0
 
         if self.options["network"] == "FlowVN":
-            self.network = FlowVN(**self.options)
+            mp_split = self.options.get("mp_split", None)
+            mp_enable = (self.options.get("mode") == "test") and (mp_split is not None)
+            if mp_enable:
+                self.network = FlowVNModelParallel(split=int(mp_split), **self.options)
+            else:
+                self.network = FlowVN(**self.options)
         elif self.options["network"] == "FlowMRI_Net":
             self.network = FlowMRI_Net(**self.options)
         else:
@@ -199,7 +204,8 @@ class UnrolledNetwork(pl.LightningModule):
         self._fixed_vis_case = None
         self.vis_nv_idx = 0
         self.vis_nt_idx = 0
-
+    def on_fit_start(self):  # 不影响 test
+        pass
     def _to_metrics_predgt(self, x: torch.Tensor) -> np.ndarray:
         if torch.is_tensor(x):
             x = x.detach().cpu()
@@ -439,7 +445,8 @@ class UnrolledNetwork(pl.LightningModule):
             torch.cuda.synchronize()
             recon_ms = float(start_event.elapsed_time(end_event))
 
-        recon_img_complex = (recon_img[0] * batch["norm"]).detach()
+        norm = batch["norm"].to(recon_img[0].device, non_blocking=True)
+        recon_img_complex = (recon_img[0] * norm).detach()
 
         usrate = int(batch["usrate"][0]) if hasattr(batch["usrate"], "__len__") else int(batch["usrate"])
         seg_idx = int(batch["seg_idx"][0]) if hasattr(batch["seg_idx"], "__len__") else int(batch["seg_idx"])
@@ -534,7 +541,13 @@ def _build_arg_parser():
         default=None,
         help="base output dir used to mirror directory structure, e.g. .../ChallengeData_FlowVN/TaskR1&R2",
     )
-
+    parser.add_argument(
+    "--mp_split",
+    type=int,
+    default=None,
+    help="test-only: split FlowVN stages across cuda:0 and cuda:1. "
+         "Example: num_stages=10, mp_split=5 puts 0-4 on GPU0 and 5-9 on GPU1.",
+    )
     return parser
 
 
@@ -621,7 +634,7 @@ def _test(args: dict):
 
     trainer = pl.Trainer(
         accelerator="gpu",
-        devices=args["devices"],
+        devices=[args["devices"][0]] if isinstance(args["devices"], (list, tuple)) else [args["devices"]],
         logger=False,
         callbacks=[save_callback],
     )
@@ -632,10 +645,12 @@ def _test(args: dict):
         map_location = "cpu"
 
     model = UnrolledNetwork.load_from_checkpoint(
-        args["ckpt_path"],
-        map_location=map_location,
-        **args,
+    args["ckpt_path"],
+    map_location="cpu",   # 关键：先别让 Lightning/torch 自动放 cuda
+    **args,
     )
+    model.eval()
+
     trainer.test(model, dataloaders=dataloader)
 
 

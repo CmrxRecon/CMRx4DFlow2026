@@ -34,13 +34,13 @@ def main():
     parser.add_argument("--batch_size", type=int, default=1)
     parser.add_argument("--act", type=str, default="linear_flowvn")
 
-    parser.add_argument("--devices", type=str, default="0")
-
+    parser.add_argument("--devices", type=int, nargs="+", default=[0])
     parser.add_argument("--usrate", type=int, nargs="+", default=[10, 20, 30, 40, 50])
 
     parser.add_argument("--cuda_visible_devices", type=str, default=None)
 
     parser.add_argument("--extra", type=str, nargs="*", default=[])
+    parser.add_argument("--mp_split", type=int, default=None)
 
     args = parser.parse_args()
 
@@ -64,13 +64,19 @@ def main():
         "--lr", str(args.lr),
         "--batch_size", str(args.batch_size),
         "--act", args.act,
-        "--devices", str(args.devices),
+
+        "--devices", *[str(d) for d in args.devices],
+
         "--test_roots", args.test_roots,
         "--in_base_dir", args.in_base_dir,
         "--out_base_dir", args.out_base_dir,
+
         "--usrate", *[str(r) for r in args.usrate],
         "--ckpt_path", args.ckpt_path,
     ]
+
+    if args.mp_split is not None:
+        cmd += ["--mp_split", str(args.mp_split)]
 
     if args.extra:
         cmd += args.extra

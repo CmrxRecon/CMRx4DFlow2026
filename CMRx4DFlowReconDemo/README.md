@@ -3,7 +3,7 @@
 
 > **Demo data note**  
 > The demo data can be found on the Synapse dataset page:  
-> https://www.synapse.org/Synapse:syn64545434/wiki/638361
+> https://www.synapse.org/Synapse:syn73716718.draft/datasets/
 
 The demos are split into two folders:
 
@@ -115,6 +115,8 @@ Saved under:
 - FlowVN test outputs written by FlowVN into `--save_dir` (script sets `--save_dir` to this folder)
 
 ### Example
+# TaskR1R2:
+# A single GPU with 48GB VRAM is sufficient.
 ``` bash
 python BatchRecon_FlowVN.py \
   --flowvn_main ../FlowVN/main.py \
@@ -122,8 +124,22 @@ python BatchRecon_FlowVN.py \
   --in_base_dir '/mnt/nas/nas3/openData/rawdata/4dFlow/ChallengeData/TaskR1R2/ValidationSet/' \
   --out_base_dir '/mnt/nas/nas3/openData/rawdata/4dFlow/ChallengeData_FlowVN/TaskR1R2/ValidationSet/' \
   --ckpt_path ../FlowVN/weights/3-epochepoch=015.ckpt \
-  --usrate 10 20 30 40 50
-  --devices 1
+  --usrate 10 20 30 40 50 \
+  --devices 0
+```
+# TaskS1 / TaskS2:
+# Use --mp_split 5. This splits the 5 stages of the unrolled model across two GPUs
+# to reduce per-GPU memory usage, so you need two 48GB VRAM GPUs.
+``` bash
+python BatchRecon_FlowVN.py \
+  --flowvn_main ../FlowVN/main.py \
+  --test_roots '/mnt/nas/nas3/openData/rawdata/4dFlow/ChallengeData/TaskS2/ValidationSet/' \
+  --in_base_dir '/mnt/nas/nas3/openData/rawdata/4dFlow/ChallengeData/TaskS2/ValidationSet/' \
+  --out_base_dir '/mnt/nas/nas3/openData/rawdata/4dFlow/ChallengeData_FlowVN/TaskS2/ValidationSet/' \
+  --ckpt_path ../FlowVN/weights/3-epochepoch=015.ckpt \
+  --usrate 10 20 30 40 50 \
+  --mp_split 5 \
+  --devices 0
 ```
 
 ## BatchEval.py

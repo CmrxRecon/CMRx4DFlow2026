@@ -547,52 +547,53 @@ class VnMriReconCell(nn.Module):
     def forward(self, u_t_1, f, c, usrate, S_prev=None):
         N, V, T, D, H, W, _ = u_t_1.shape
 
-        u_k_xyz = F.conv3d(
+        Ru = 0.0
+
+        # ---- xyz branch ----
+        u_k = F.conv3d(
             u_t_1.permute(0, 2, 6, 1, 3, 4, 5).contiguous().view(N * T * 2, V, D, H, W),
             self.conv_kernel_xyz,
             padding=(self.pad_d, self.pad, self.pad),
         )
-        u_k_xyt = F.conv3d(
+        u_k = self.activation1(u_k)
+        u_kT = F.conv_transpose3d(u_k, self.conv_kernel_xyz, padding=(self.pad_d, self.pad, self.pad))
+        Ru = Ru + u_kT.view(N, T, 2, V, D, H, W).permute(0, 3, 1, 4, 5, 6, 2)
+        del u_k, u_kT
+
+        # ---- xyt branch ----
+        u_k = F.conv3d(
             u_t_1.permute(0, 5, 6, 1, 3, 4, 2).contiguous().view(N * W * 2, V, D, H, T),
             self.conv_kernel_xyt,
             padding=(self.pad_d, self.pad, self.pad),
         )
-        u_k_yzt = F.conv3d(
+        u_k = self.activation2(u_k)
+        u_kT = F.conv_transpose3d(u_k, self.conv_kernel_xyt, padding=(self.pad_d, self.pad, self.pad))
+        Ru = Ru + u_kT.view(N, W, 2, V, D, H, T).permute(0, 3, 6, 4, 5, 1, 2)
+        del u_k, u_kT
+
+        # ---- yzt branch ----
+        u_k = F.conv3d(
             u_t_1.permute(0, 3, 6, 1, 4, 5, 2).contiguous().view(N * D * 2, V, H, W, T),
             self.conv_kernel_yzt,
             padding=(self.pad, self.pad, self.pad),
         )
-        u_k_xzt = F.conv3d(
+        u_k = self.activation3(u_k)
+        u_kT = F.conv_transpose3d(u_k, self.conv_kernel_yzt, padding=(self.pad, self.pad, self.pad))
+        Ru = Ru + u_kT.view(N, D, 2, V, H, W, T).permute(0, 3, 6, 1, 4, 5, 2)
+        del u_k, u_kT
+
+        # ---- xzt branch ----
+        u_k = F.conv3d(
             u_t_1.permute(0, 4, 6, 1, 3, 5, 2).contiguous().view(N * H * 2, V, D, W, T),
             self.conv_kernel_xzt,
             padding=(self.pad_d, self.pad, self.pad),
         )
+        u_k = self.activation4(u_k)
+        u_kT = F.conv_transpose3d(u_k, self.conv_kernel_xzt, padding=(self.pad_d, self.pad, self.pad))
+        Ru = Ru + u_kT.view(N, H, 2, V, D, W, T).permute(0, 3, 6, 4, 1, 5, 2)
+        del u_k, u_kT
 
-        f_u_k_xyz = self.activation1(u_k_xyz)
-        f_u_k_xyt = self.activation2(u_k_xyt)
-        f_u_k_yzt = self.activation3(u_k_yzt)
-        f_u_k_xzt = self.activation4(u_k_xzt)
-
-        u_k_T_xyz = F.conv_transpose3d(
-            f_u_k_xyz, self.conv_kernel_xyz, padding=(self.pad_d, self.pad, self.pad)
-        )
-        u_k_T_xyt = F.conv_transpose3d(
-            f_u_k_xyt, self.conv_kernel_xyt, padding=(self.pad_d, self.pad, self.pad)
-        )
-        u_k_T_yzt = F.conv_transpose3d(
-            f_u_k_yzt, self.conv_kernel_yzt, padding=(self.pad, self.pad, self.pad)
-        )
-        u_k_T_xzt = F.conv_transpose3d(
-            f_u_k_xzt, self.conv_kernel_xzt, padding=(self.pad_d, self.pad, self.pad)
-        )
-
-        Ru = (
-            u_k_T_xyz.view(N, T, 2, V, D, H, W).permute(0, 3, 1, 4, 5, 6, 2)
-            + u_k_T_xyt.view(N, W, 2, V, D, H, T).permute(0, 3, 6, 4, 5, 1, 2)
-            + u_k_T_yzt.view(N, D, 2, V, H, W, T).permute(0, 3, 6, 1, 4, 5, 2)
-            + u_k_T_xzt.view(N, H, 2, V, D, W, T).permute(0, 3, 6, 4, 1, 5, 2)
-        )
-        Ru /= self.options["features_out"]
+        Ru = Ru / self.options["features_out"]
 
         Au = mri_forward_op(torch.view_as_complex(u_t_1), c, abs(f[:, :, 0, :, 0, :, :]) != 0)
         residual = Au - f
