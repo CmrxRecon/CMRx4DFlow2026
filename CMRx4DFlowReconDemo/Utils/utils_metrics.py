@@ -117,7 +117,7 @@ def AngErr(pred, gt, segmask=None, eps=1e-8):
     dot = np.sum(pred * gt, axis=0)  # (Nt,SPE,PE,FE)
     norm_p = np.linalg.norm(pred, axis=0)
     norm_g = np.linalg.norm(gt, axis=0)
-    cos_sim = np.clip(dot / (norm_p * norm_g + eps), 0.0, 1.0)
+    cos_sim = np.clip(dot / (norm_p * norm_g + eps), -1.0, 1.0)
 
     error_map = np.arccos(cos_sim)           # radians
 
