@@ -128,8 +128,7 @@ python BatchRecon_FlowVN.py \
   --devices 0
 ```
 # TaskS1 / TaskS2:
-# Use --mp_split 5. This splits the 5 stages of the unrolled model across two GPUs
-# to reduce per-GPU memory usage, so you need two 48GB VRAM GPUs.
+# Use --low-mem to reduce GPU memory usage
 ``` bash
 python BatchRecon_FlowVN.py \
   --flowvn_main ../FlowVN/main.py \
@@ -138,8 +137,8 @@ python BatchRecon_FlowVN.py \
   --out_base_dir '/mnt/nas/nas3/openData/rawdata/4dFlow/ChallengeData_FlowVN/TaskS2/ValidationSet/' \
   --ckpt_path ../FlowVN/weights/3-epochepoch=015.ckpt \
   --usrate 10 20 30 40 50 \
-  --mp_split 5 \
-  --devices 0
+  --devices 0\
+  --lowmem
 ```
 
 ## BatchEval.py

@@ -25,7 +25,7 @@ sys.path.append("../")
 from Utils.utils_datasl import save_coo_npz
 from Utils.utils_metrics import nRMSE, SSIM, RelErr, AngErr
 from Utils.utils_flow import complex2magflow
-from networks.flowvn_mp import FlowVNModelParallel
+from networks.flowvn_lowmem import FlowVNLowMem
 from networks.flowvn import FlowVN
 
 
@@ -159,7 +159,7 @@ class CMRSaveCallback(pl.Callback):
         if recon_ms is not None:
             self._cache[k]["recon_ms_sum"] += float(recon_ms)
 
-        recon = outputs["recon"].detach().cpu()
+        recon = outputs["recon"]
         x = recon[0] if recon.ndim == 5 else recon
         x_np = x.numpy()
 
@@ -187,10 +187,9 @@ class UnrolledNetwork(pl.LightningModule):
         self.log_img_count = 0
 
         if self.options["network"] == "FlowVN":
-            mp_split = self.options.get("mp_split", None)
-            mp_enable = (self.options.get("mode") == "test") and (mp_split is not None)
-            if mp_enable:
-                self.network = FlowVNModelParallel(split=int(mp_split), **self.options)
+            use_lowmem = bool(self.options.get("lowmem", False)) and (self.options.get("mode") == "test")
+            if use_lowmem:
+                self.network = FlowVNLowMem(**self.options)
             else:
                 self.network = FlowVN(**self.options)
         elif self.options["network"] == "FlowMRI_Net":
@@ -446,15 +445,17 @@ class UnrolledNetwork(pl.LightningModule):
             recon_ms = float(start_event.elapsed_time(end_event))
 
         norm = batch["norm"].to(recon_img[0].device, non_blocking=True)
-        recon_img_complex = (recon_img[0] * norm).detach()
-
+        recon_img_complex = (recon_img[0] * norm).detach().cpu()
+        del recon_img
+        if torch.cuda.is_available():
+            torch.cuda.synchronize()
         usrate = int(batch["usrate"][0]) if hasattr(batch["usrate"], "__len__") else int(batch["usrate"])
         seg_idx = int(batch["seg_idx"][0]) if hasattr(batch["seg_idx"], "__len__") else int(batch["seg_idx"])
         subj = batch["subj"][0] if isinstance(batch["subj"], (list, tuple)) else batch["subj"]
 
         case_dir = batch["case_dir"][0] if isinstance(batch["case_dir"], (list, tuple)) else batch["case_dir"]
         out_dir = batch["out_dir"][0] if isinstance(batch["out_dir"], (list, tuple)) else batch["out_dir"]
-
+        torch.cuda.empty_cache()
         return {
             "recon": recon_img_complex,
             "subj": subj,
@@ -542,11 +543,9 @@ def _build_arg_parser():
         help="base output dir used to mirror directory structure, e.g. .../ChallengeData_FlowVN/TaskR1&R2",
     )
     parser.add_argument(
-    "--mp_split",
-    type=int,
-    default=None,
-    help="test-only: split FlowVN stages across cuda:0 and cuda:1. "
-         "Example: num_stages=10, mp_split=5 puts 0-4 on GPU0 and 5-9 on GPU1.",
+        "--lowmem",
+        action="store_true",
+        help="test-only: use FlowVNLowMem for inference to reduce memory",
     )
     return parser
 

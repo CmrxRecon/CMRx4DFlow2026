@@ -40,7 +40,9 @@ def main():
     parser.add_argument("--cuda_visible_devices", type=str, default=None)
 
     parser.add_argument("--extra", type=str, nargs="*", default=[])
-    parser.add_argument("--mp_split", type=int, default=None)
+
+    parser.add_argument("--lowmem", action="store_true",
+                        help="use FlowVNLowMem for inference (forward low memory)")
 
     args = parser.parse_args()
 
@@ -75,8 +77,8 @@ def main():
         "--ckpt_path", args.ckpt_path,
     ]
 
-    if args.mp_split is not None:
-        cmd += ["--mp_split", str(args.mp_split)]
+    if args.lowmem:
+        cmd += ["--lowmem"]
 
     if args.extra:
         cmd += args.extra
