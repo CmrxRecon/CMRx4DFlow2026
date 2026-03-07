@@ -130,38 +130,24 @@ def AngErr(pred, gt, segmask=None, eps=1e-8):
 
 def ComplexDiffErr(pred, ref, segmask, eps=1e-12):
     """
-    Complex Difference Error, matching:
+    Normalized Complex Difference Error:
 
-        E_complex = sqrt( (sum_{i=1..N} |z_i - z_i^*|^2) / N )
+        E_complex = sqrt( (sum |pred - ref|^2) / N ) / max(|ref|)
 
-    where the sum is taken over voxels inside the manually segmented aortic region.
-
-    Parameters
-    ----------
-    pred, ref : complex ndarray
-        Reconstructed and fully-sampled reference complex data.
-        Shape can be (..., SPE, PE, FE) or any shape as long as segmask can broadcast.
-    segmask : bool ndarray
-        Aortic ROI mask, shape (SPE, PE, FE). True/1 means inside ROI.
-    eps : float
-        Small constant to avoid division by zero if N==0.
-
-    Returns
-    -------
-    float
-        E_complex (RMSE of complex difference within the ROI).
+    where the sum and max are taken over voxels inside the segmented ROI.
     """
     pred = np.asarray(pred)
     ref  = np.asarray(ref)
     segmask = np.asarray(segmask, dtype=bool)
 
-    # Expand (SPE,PE,FE) -> (1,...,SPE,PE,FE) to broadcast to pred/ref
     while segmask.ndim < pred.ndim:
         segmask = segmask[None, ...]
     mask = np.broadcast_to(segmask, pred.shape)
 
-    diff2 = np.abs(pred - ref) ** 2  # |z - z*|^2
+    diff2 = np.abs(pred - ref) ** 2
     num = np.sum(diff2[mask])
     N = int(np.sum(mask))
 
-    return float(np.sqrt(num / (N + eps)))
+    ref_max = np.max(np.abs(ref[mask]))
+
+    return float(np.sqrt(num / (N + eps)) / (ref_max + eps))
