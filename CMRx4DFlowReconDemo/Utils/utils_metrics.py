@@ -130,24 +130,26 @@ def AngErr(pred, gt, segmask=None, eps=1e-8):
 
 def ComplexDiffErr(pred, ref, segmask, eps=1e-12):
     """
-    Normalized Complex Difference Error:
-
-        E_complex = sqrt( (sum |pred - ref|^2) / N ) / max(|ref|)
-
-    where the sum and max are taken over voxels inside the segmented ROI.
+    Symmetric bounded complex diff error in [0, 1]:
+        E = ||pred - ref||_2 / (||pred||_2 + ||ref||_2)
+    computed inside ROI.
     """
     pred = np.asarray(pred)
-    ref  = np.asarray(ref)
+    ref = np.asarray(ref)
     segmask = np.asarray(segmask, dtype=bool)
+
+    if pred.shape != ref.shape:
+        raise ValueError(f"Shape mismatch: {pred.shape} vs {ref.shape}")
 
     while segmask.ndim < pred.ndim:
         segmask = segmask[None, ...]
     mask = np.broadcast_to(segmask, pred.shape)
 
-    diff2 = np.abs(pred - ref) ** 2
-    num = np.sum(diff2[mask])
-    N = int(np.sum(mask))
+    if not np.any(mask):
+        raise ValueError("segmask has no True elements.")
 
-    ref_max = np.max(np.abs(ref[mask]))
+    err = np.sqrt(np.sum(np.abs(pred[mask] - ref[mask]) ** 2))
+    predn = np.sqrt(np.sum(np.abs(pred[mask]) ** 2))
+    refn = np.sqrt(np.sum(np.abs(ref[mask]) ** 2))
 
-    return float(np.sqrt(num / (N + eps)) / (ref_max + eps))
+    return float(err / (predn + refn + eps))
